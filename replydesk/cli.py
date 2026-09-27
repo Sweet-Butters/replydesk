@@ -16,18 +16,18 @@ import argparse
 import json
 import sys
 
-from . import config
+from . import accounts, config
 from .channels.sample import SampleChannel
 from .models import Result
 from .pipeline import respond, triage
 from .questions import email as email_q
 
-def _gmail(account: str = ""):
-    from .channels.gmail import GmailChannel   # imported lazily: the extra deps are optional
-    return GmailChannel(account=account)
+def _gmail(account: str = "", query: str = ""):
+    from .channels.gmail import DEFAULT_QUERY, GmailChannel   # lazily: the extra deps are optional
+    return GmailChannel(account=account, query=query or DEFAULT_QUERY)
 
 
-CHANNELS = {"sample": lambda account="": SampleChannel(), "gmail": _gmail}
+CHANNELS = {"sample": lambda account="", query="": SampleChannel(), "gmail": _gmail}
 ROUTE = {"skip": "답장 불필요", "human": "사람이 직접", "draft": "초안 가능"}
 BAR = "─" * 72
 
@@ -105,7 +105,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("command", choices=["triage", "reply"])
     parser.add_argument("thread", nargs="?", help="thread id, for `reply`")
     parser.add_argument("--channel", default="sample", choices=sorted(CHANNELS))
-    parser.add_argument("--account", default="", help="mailbox to use, for channels with several")
+    parser.add_argument("--account", default="",
+                        help="a name from accounts.json, or an email address")
     parser.add_argument("--stage", action="store_true",
                         help="put the top draft where the person sends it (Gmail: a draft)")
     parser.add_argument("--send", action="store_true",
@@ -123,7 +124,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name} 가 없습니다. 환경변수나 {name}_FILE 로 지정하세요.", file=sys.stderr)
             return 2
 
-    channel = CHANNELS[args.channel](args.account)
+    email, query, channel_name = args.account, "", args.channel
+    if args.account and "@" not in args.account:      # a name from accounts.json
+        try:
+            entry = accounts.resolve(args.account)    # exports the credential/token paths
+        except (KeyError, ValueError) as e:
+            print(e, file=sys.stderr)
+            return 2
+        email, query = entry.get("email", ""), entry.get("query", "")
+        channel_name = entry.get("channel", args.channel)
+    channel = CHANNELS[channel_name](email, query)
     threads = [t for t in channel.fetch() if t.needs_reply]
 
     if args.command == "triage":

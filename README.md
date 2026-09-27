@@ -91,6 +91,25 @@ python -m replydesk reply <thread id> --channel gmail --stage   # into the mailb
 python -m replydesk reply <thread id> --channel gmail --send    # shows it, then asks
 ```
 
+### Several mailboxes
+
+Name them once in `~/.replydesk/accounts.json` (or wherever `REPLYDESK_ACCOUNTS` points) and the
+paths stop travelling on the command line. The file holds paths and queries — never a key or token:
+
+```json
+{
+  "work":     {"channel": "gmail", "email": "me@company.com",
+               "credentials": "/keys/client.json", "token": "/keys/work.json"},
+  "personal": {"channel": "gmail", "email": "me@gmail.com",
+               "credentials": "/keys/client_personal.json", "token": "/keys/personal.json",
+               "query": "in:inbox newer_than:7d"}
+}
+```
+
+```bash
+python -m replydesk triage --channel gmail --account work
+```
+
 Scopes: `gmail.readonly`, `gmail.compose`, `gmail.send`. Spam, promotions, social and forum mail are
 excluded from the query, so Gmail's own classification does the first filtering pass for free.
 

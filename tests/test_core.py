@@ -6,6 +6,8 @@ worth locking down here is the logic that would silently corrupt a judgement.
 from __future__ import annotations
 
 import datetime as dt
+import json
+import os
 
 import pytest
 
@@ -166,3 +168,30 @@ def test_send_goes_through_only_once_a_person_has_answered():
     channel = Channel()
     assert confirm_send(channel, ok.thread, ok, yes=True) == 0
     assert channel.sent == ["보낼 본문"]
+
+
+def test_named_account_exports_paths_without_ever_holding_a_secret(tmp_path, monkeypatch):
+    from replydesk import accounts
+
+    book = tmp_path / "accounts.json"
+    book.write_text(json.dumps({"work": {"channel": "gmail", "email": "me@x.com",
+                                         "credentials": str(tmp_path / "c.json"),
+                                         "token": str(tmp_path / "t.json"),
+                                         "query": "in:inbox newer_than:3d"}}), encoding="utf-8")
+    monkeypatch.setenv("REPLYDESK_ACCOUNTS", str(book))
+    monkeypatch.delenv("GMAIL_CREDENTIALS_FILE", raising=False)
+
+    assert accounts.names() == ["work"]
+    entry = accounts.resolve("work")
+    assert entry["email"] == "me@x.com" and entry["query"].startswith("in:inbox")
+    assert os.environ["GMAIL_CREDENTIALS_FILE"].endswith("c.json")
+    assert os.environ["GMAIL_TOKEN_FILE"].endswith("t.json")
+    with pytest.raises(KeyError):
+        accounts.resolve("nope")
+
+
+def test_no_account_book_is_not_an_error(tmp_path, monkeypatch):
+    from replydesk import accounts
+
+    monkeypatch.setenv("REPLYDESK_ACCOUNTS", str(tmp_path / "missing.json"))
+    assert accounts.load() == {} and accounts.names() == []

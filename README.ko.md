@@ -88,6 +88,26 @@ python -m replydesk reply <스레드 id> --channel gmail --stage   # 임시보�
 python -m replydesk reply <스레드 id> --channel gmail --send    # 보여준 뒤 확인을 묻고 발송
 ```
 
+### 메일함이 여러 개일 때
+
+`~/.replydesk/accounts.json`(또는 `REPLYDESK_ACCOUNTS`가 가리키는 파일)에 한 번 적어 두면
+명령줄에서 경로를 넘기지 않아도 됩니다. 이 파일에는 경로와 조회 조건만 들어가고 키나 토큰은
+들어가지 않습니다.
+
+```json
+{
+  "work":     {"channel": "gmail", "email": "me@company.com",
+               "credentials": "/keys/client.json", "token": "/keys/work.json"},
+  "personal": {"channel": "gmail", "email": "me@gmail.com",
+               "credentials": "/keys/client_personal.json", "token": "/keys/personal.json",
+               "query": "in:inbox newer_than:7d"}
+}
+```
+
+```bash
+python -m replydesk triage --channel gmail --account work
+```
+
 권한은 `gmail.readonly`, `gmail.compose`, `gmail.send` 세 개입니다. 스팸·프로모션·소셜·포럼은
 조회에서 빼기 때문에, Gmail이 이미 한 분류가 공짜 1차 필터가 됩니다.
 
