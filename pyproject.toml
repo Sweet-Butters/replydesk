@@ -1,0 +1,19 @@
+[project]
+name = "replydesk"
+version = "0.1.0"
+description = "Typed judgement first, then a draft a person sends: a reply copilot for email, chat and support inboxes"
+requires-python = ">=3.10"
+dependencies = [
+    "typesafe-sdk>=0.1",   # Jev: typed judgements with calibrated probabilities
+    "google-genai>=1.0",   # drafting
+]
+
+[project.scripts]
+replydesk = "replydesk.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["replydesk*"]

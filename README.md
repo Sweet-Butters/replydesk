@@ -1,0 +1,98 @@
+# replydesk
+
+한국어: [README.ko.md](README.ko.md)
+
+A reply copilot that **judges before it writes**, for inboxes a person is responsible for — email
+today, chat and support queues next.
+
+Most assistants hand a language model the thread and ask for a reply. This one asks a decision
+model seven typed questions first — is a reply expected, what do they want, how urgent, how annoyed,
+can it be answered from what we have, should a human write this, did we promise something — and only
+then writes three drafts against those answers. A person picks one, edits it, and sends it.
+
+```
+                    ┌──────────── judge (Jev) ────────────┐
+ thread ──────────► │ needs_reply  0.95                   │
+ (any channel)      │ intent       request_action (0.37)  │──► guidance ──┐
+                    │ urgency      2.3 / 3                │               │
+                    │ frustration  2.3 / 3                │               ▼
+                    │ answerable   0.31                   │       write (Gemini)
+                    │ needs_human  0.26                   │        3 drafts
+                    │ commitment   0.06                   │               │
+                    └─────────────────────────────────────┘               ▼
+                                                              rank (Jev) ──► person sends
+```
+
+## Why a decision model for the first half
+
+`intent == "billing"` with confidence 0.93 is something code can branch on; a paragraph of prose is
+not. Low confidence is a routing signal, not a failure. And because the judgement is cheap
+(~1,900 input tokens, about $0.00008 a thread) it can run over a whole inbox, while drafting — the
+expensive half — runs only on the threads a person is actually about to answer.
+
+Measured on the sample inbox: judgement only, 0.4 s a thread; judgement + three drafts + ranking,
+2.2 s.
+
+## Quick start
+
+```bash
+pip install -e .
+export TYPESAFE_API_KEY=...        # or TYPESAFE_API_KEY_FILE=/path/to/key
+export GEMINI_API_KEY=...          # or GEMINI_API_KEY_FILE=/path/to/key
+
+python -m replydesk triage         # judge every waiting thread, one line each
+python -m replydesk reply t1       # judge one thread, write three drafts, rank them
+python -m replydesk reply t1 --json
+```
+
+Out of the box it runs against a fixed sample inbox, so you can see the whole pipeline before
+connecting a mailbox. Keys are read from the environment or from a file the environment points at;
+they are never written to the repository and never logged.
+
+## Triage output
+
+```
+[t1] 긴급 2.3/3 · 처리 요청 · 초안 가능  · 결제가 안 됩니다 (주문 A-2291)
+[t2] 긴급 2.0/3 · 처리 요청 · 초안 가능  · Re: 견적서 회신 부탁드립니다
+[t3] 긴급 0.0/3 · 기타      · 초안 가능  · [뉴스레터] 9월 제품 업데이트
+[t4] 긴급 2.1/3 · 처리 요청 · 사람이 직접 · 환불 요청합니다
+```
+
+The refund demand routes itself to a person; the newsletter scores 0.0 urgency and never reaches
+the drafting model.
+
+## Adding a channel
+
+A channel turns whatever it has into `Thread` and `Message` (`replydesk/models.py`) and, if it can,
+stages a chosen draft where the person will send it. Everything above that line is channel-agnostic.
+
+| Channel | Input | Status |
+|---|---|---|
+| Sample inbox | fixed threads | shipped |
+| Email | Gmail API / IMAP | next |
+| Support queue | helpdesk API | planned |
+| Community & social comments | platform API | planned — check each platform's terms first |
+| KakaoTalk | screen capture + OCR (no API) | planned; see [notes](docs/kakaotalk.md) |
+
+Question sets live beside channels (`replydesk/questions/`). Email asks about urgency and open
+promises; a support queue would ask about refund authority and SLA; a comment feed would ask whether
+a reply is worth making at all. The pipeline does not change.
+
+## What it will not do
+
+- **It does not send.** Staging a draft where a person can edit it is the last step a machine takes.
+- **It does not invent facts.** The drafting rules forbid dates, prices and policies that are not in
+  the thread; when an answer needs a lookup, the draft says what will be checked and by when.
+- **It does not obey the mail.** Text inside a thread that looks like an instruction is treated as
+  correspondence, not as a command.
+
+## Credits
+
+The judge-then-write-then-rank shape is the one used by
+[jev-chat-windows](https://github.com/jev-chat/jev-chat-windows) (MIT), which I contributed Korean
+support to. No code is copied from it: this repository is written for API-based channels and carries
+no GUI dependency.
+
+Decisions come from [TypeSafe's Jev](https://docs.typesafe.ai/); drafts from Gemini.
+
+MIT licensed.

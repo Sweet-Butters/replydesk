@@ -1,0 +1,51 @@
+"""judge → write → rank, for any channel.
+
+The order matters: the judgement is what makes the drafts specific, and ranking after writing is
+the only point where Jev sees the actual candidates. Skipping the middle step is supported — a
+triage run that only judges costs one call and is what you want when sorting an inbox.
+"""
+from __future__ import annotations
+
+import time
+
+from . import draft as writer
+from . import jev
+from .models import Draft, Result, Thread
+
+
+def _merge(total: dict, one: dict) -> None:
+    for k, v in (one or {}).items():
+        total[k] = total.get(k, 0) + v if isinstance(v, (int, float)) else v
+
+
+def triage(thread: Thread, questions: dict, keep: int = 12) -> Result:
+    """One Jev call: every question, no drafting. Cheap enough to run over a whole inbox."""
+    answers, usage, seconds = jev.ask(thread.as_state(keep), questions)
+    return Result(thread=thread, answers=answers, usage=usage, seconds=seconds)
+
+
+def respond(thread: Thread, questions: dict, guidance, rank_instructions: str,
+            style: str = "", keep: int = 12, drafts: int = 3) -> Result:
+    """Full pass. `guidance` turns the answers into the note the writer follows.
+
+    Drafting is skipped when the judge says no reply is expected: the result still carries the
+    judgement, so the caller can show why nothing was written.
+    """
+    started = time.perf_counter()
+    state = thread.as_state(keep)
+    answers, usage, _ = jev.ask(state, questions)
+    total: dict = {}
+    _merge(total, usage)
+    if answers.get("needs_reply", {}).get("value", 1.0) < 0.5:
+        return Result(thread=thread, answers=answers, usage=total, seconds=time.perf_counter() - started)
+
+    texts, draft_usage, _ = writer.write(state, guidance(answers), style)
+    total["draft_input_tokens"] = draft_usage.get("input_tokens", 0)
+    total["draft_output_tokens"] = draft_usage.get("output_tokens", 0)
+    texts = texts[:drafts]
+    scores, rank_usage = jev.rank(state, texts, rank_instructions)
+    _merge(total, rank_usage)
+    ranked = tuple(sorted((Draft(text=t, score=s) for t, s in zip(texts, scores)),
+                          key=lambda d: -d.score))
+    return Result(thread=thread, answers=answers, drafts=ranked, usage=total,
+                  seconds=time.perf_counter() - started)

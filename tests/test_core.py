@@ -1,0 +1,118 @@
+"""Tests for everything that does not need a network: shapes, parsing, and the judgement rules.
+
+The model calls are covered by `python -m replydesk reply t1` against the sample inbox; what is
+worth locking down here is the logic that would silently corrupt a judgement.
+"""
+from __future__ import annotations
+
+import datetime as dt
+
+import pytest
+
+from replydesk import jev
+from replydesk.channels.sample import SampleChannel
+from replydesk.draft import _parse
+from replydesk.models import Draft, Message, Result, Thread
+from replydesk.questions import email as email_q
+
+
+def thread(*sides: str) -> Thread:
+    msgs = tuple(Message(s, f"{s} 메시지", sender=s, at=dt.datetime(2026, 9, 28, 9, i))
+                 for i, s in enumerate(sides))
+    return Thread(id="x", channel="email", subject="제목", messages=msgs)
+
+
+def test_needs_reply_follows_who_spoke_last():
+    assert thread("us", "them").needs_reply
+    assert not thread("them", "us").needs_reply
+    assert not Thread(id="empty", channel="email").needs_reply
+
+
+def test_state_keeps_only_the_recent_window_and_drops_empty_fields():
+    state = thread(*(["them"] * 20)).as_state(keep=5)
+    assert len(state["thread"]) == 5
+    assert "context" not in state          # empty context is not worth a token
+    assert state["thread"][0]["from"] == "them"
+
+
+def test_latest_from_them_ignores_our_own_replies():
+    t = Thread(id="t", channel="email", messages=(
+        Message("them", "먼저"), Message("us", "우리"), Message("them", "나중")))
+    assert t.latest_from_them.text == "나중"
+
+
+def test_normalize_reports_noul_certainty_as_distance_from_a_coin_flip():
+    assert jev.normalize({"type": "noul", "noul": 0.5})["confidence"] == 0.0
+    assert jev.normalize({"type": "noul", "noul": 1.0})["confidence"] == 1.0
+    assert jev.normalize({"type": "noul", "noul": 0.0})["confidence"] == 1.0
+    assert jev.normalize({"type": "noul", "noul": 0.75})["confidence"] == pytest.approx(0.5)
+
+
+def test_normalize_carries_the_distribution_for_choice_and_score():
+    choice = jev.normalize({"type": "choice", "choice": "billing", "confidence": 0.8,
+                            "probabilities": {"billing": 0.8, "other": 0.2}})
+    assert choice["value"] == "billing" and choice["probabilities"]["other"] == 0.2
+    score = jev.normalize({"type": "score", "score": 2.4, "confidence": 0.7,
+                           "legend": {"0": "낮음"}, "probabilities": {"2": 0.6}})
+    assert score["value"] == 2.4 and score["legend"]["0"] == "낮음"
+
+
+def test_normalize_refuses_an_unknown_answer_type():
+    with pytest.raises(ValueError):
+        jev.normalize({"type": "essay", "text": "..."})
+
+
+@pytest.mark.parametrize("raw", [
+    '["첫째", "둘째", "셋째"]',
+    '```json\n["첫째", "둘째", "셋째"]\n```',
+    '1. 첫째\n2. 둘째\n3. 셋째',
+])
+def test_parse_recovers_three_drafts_from_the_shapes_models_actually_emit(raw):
+    assert _parse(raw) == ["첫째", "둘째", "셋째"]
+
+
+def test_parse_keeps_at_most_three_and_drops_blanks():
+    assert _parse('["하나", "", "둘", "셋", "넷"]') == ["하나", "둘", "셋"]
+
+
+def test_guidance_speaks_up_only_about_what_changes_the_reply():
+    calm = {"intent": {"value": "ask_question"}, "urgency": {"type": "score", "value": 0.2},
+            "frustration": {"type": "score", "value": 0.1}}
+    assert "blocking" not in email_q.guidance(calm)
+
+    urgent = dict(calm, urgency={"type": "score", "value": 2.8},
+                  frustration={"type": "score", "value": 2.0},
+                  commitment_made={"type": "noul", "value": 0.9},
+                  answerable_here={"type": "noul", "value": 0.2})
+    note = email_q.guidance(urgent)
+    assert "blocking" in note and "frustrated" in note
+    assert "promised" in note and "does not contain" in note
+
+
+def test_guidance_is_empty_when_the_judge_said_nothing_actionable():
+    assert email_q.guidance({}) == ""
+
+
+def test_result_best_is_the_top_ranked_draft():
+    result = Result(thread=thread("them"), answers={},
+                    drafts=(Draft("낮음", 0.2), Draft("높음", 0.7)))
+    assert result.best.text == "높음"
+    assert Result(thread=thread("them"), answers={}).best is None
+
+
+def test_every_question_declares_a_type_the_judge_understands():
+    for qid, q in email_q.QUESTIONS.items():
+        assert q["type"] in {"noul", "choice", "score"}, qid
+        assert q["instructions"].strip(), qid
+        assert qid in email_q.LABELS, f"{qid} has no Korean label"
+        if q["type"] == "choice":
+            assert set(q["criteria"]) <= set(email_q.INTENT_LABELS), qid
+        if q["type"] == "score":
+            assert len(q["criteria"]) >= 2, qid
+
+
+def test_sample_inbox_covers_the_cases_the_questions_exist_to_separate():
+    threads = SampleChannel().fetch()
+    assert {t.id for t in threads} == {"t1", "t2", "t3", "t4"}
+    assert all(t.needs_reply for t in threads)
+    assert any(t.context.get("refund_policy") for t in threads)   # the human-only case
