@@ -130,3 +130,39 @@ def test_sample_inbox_covers_the_cases_the_questions_exist_to_separate():
     assert {t.id for t in threads} == {"t1", "t2", "t3", "t4"}
     assert all(t.needs_reply for t in threads)
     assert any(t.context.get("refund_policy") for t in threads)   # the human-only case
+
+
+def test_send_is_refused_for_anything_the_judge_routed_to_a_person():
+    from replydesk.cli import confirm_send
+
+    class Channel:
+        sent = False
+
+        def send(self, thread, text):
+            Channel.sent = True
+            return "sent"
+
+    result = Result(thread=thread("them"),
+                    answers={"needs_reply": {"value": 0.9}, "needs_human": {"value": 0.9}},
+                    drafts=(Draft("본문", 0.9),))
+    assert confirm_send(Channel(), result.thread, result) == 3   # routed to a human
+    assert not Channel.sent
+
+
+def test_send_goes_through_only_once_a_person_has_answered():
+    from replydesk.cli import confirm_send
+
+    class Channel:
+        def __init__(self):
+            self.sent = []
+
+        def send(self, thread, text):
+            self.sent.append(text)
+            return "sent"
+
+    ok = Result(thread=thread("them"),
+                answers={"needs_reply": {"value": 0.9}, "needs_human": {"value": 0.1}},
+                drafts=(Draft("보낼 본문", 0.9),))
+    channel = Channel()
+    assert confirm_send(channel, ok.thread, ok, yes=True) == 0
+    assert channel.sent == ["보낼 본문"]

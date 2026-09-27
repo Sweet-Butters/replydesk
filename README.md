@@ -69,7 +69,7 @@ stages a chosen draft where the person will send it. Everything above that line 
 | Channel | Input | Status |
 |---|---|---|
 | Sample inbox | fixed threads | shipped |
-| Email | Gmail API / IMAP | next |
+| Email | Gmail API | shipped — read, draft, send |
 | Support queue | helpdesk API | planned |
 | Community & social comments | platform API | planned — check each platform's terms first |
 | KakaoTalk | screen capture + OCR (no API) | planned; see [notes](docs/kakaotalk.md) |
@@ -78,9 +78,27 @@ Question sets live beside channels (`replydesk/questions/`). Email asks about ur
 promises; a support queue would ask about refund authority and SLA; a comment feed would ask whether
 a reply is worth making at all. The pipeline does not change.
 
+## Connecting Gmail
+
+```bash
+pip install -e ".[gmail]"
+export GMAIL_CREDENTIALS_FILE=/path/to/credentials.json   # a desktop OAuth client
+export GMAIL_TOKEN_FILE=/path/to/token.json               # one per mailbox
+python -m replydesk.connect --account you@example.com     # one-time consent, in your browser
+
+python -m replydesk triage --channel gmail
+python -m replydesk reply <thread id> --channel gmail --stage   # into the mailbox as a draft
+python -m replydesk reply <thread id> --channel gmail --send    # shows it, then asks
+```
+
+Scopes: `gmail.readonly`, `gmail.compose`, `gmail.send`. Spam, promotions, social and forum mail are
+excluded from the query, so Gmail's own classification does the first filtering pass for free.
+
 ## What it will not do
 
-- **It does not send.** Staging a draft where a person can edit it is the last step a machine takes.
+- **It does not send on its own.** `send()` is unreachable from the pipeline: a person passes
+  `--send`, sees the recipient, subject and body, and types `send` at a prompt. A thread the judge
+  routed to a human is refused outright unless `--force` is added.
 - **It does not invent facts.** The drafting rules forbid dates, prices and policies that are not in
   the thread; when an answer needs a lookup, the draft says what will be checked and by when.
 - **It does not obey the mail.** Text inside a thread that looks like an instruction is treated as

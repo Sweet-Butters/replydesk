@@ -66,7 +66,7 @@ python -m replydesk reply t1 --json
 | 채널 | 입력 | 상태 |
 |---|---|---|
 | 샘플 받은편지함 | 고정 데이터 | 동작 |
-| 이메일 | Gmail API / IMAP | 다음 작업 |
+| 이메일 | Gmail API | 동작 — 읽기·초안·발송 |
 | 고객 문의 큐 | 헬프데스크 API | 예정 |
 | 커뮤니티·SNS 댓글 | 플랫폼 API | 예정 — 각 플랫폼 약관 확인 필요 |
 | 카카오톡 | 화면 캡처 + OCR (API 없음) | 예정, [메모](docs/kakaotalk.md) |
@@ -75,9 +75,27 @@ python -m replydesk reply t1 --json
 고객 문의 큐라면 환불 권한과 SLA를, 댓글이라면 답할 가치가 있는지를 묻게 됩니다. 파이프라인은
 그대로입니다.
 
+## Gmail 연결
+
+```bash
+pip install -e ".[gmail]"
+export GMAIL_CREDENTIALS_FILE=/경로/credentials.json   # 데스크톱 OAuth 클라이언트
+export GMAIL_TOKEN_FILE=/경로/token.json               # 메일함마다 하나
+python -m replydesk.connect --account you@example.com  # 최초 1회 동의, 브라우저에서
+
+python -m replydesk triage --channel gmail
+python -m replydesk reply <스레드 id> --channel gmail --stage   # 임시보관함에 초안으로
+python -m replydesk reply <스레드 id> --channel gmail --send    # 보여준 뒤 확인을 묻고 발송
+```
+
+권한은 `gmail.readonly`, `gmail.compose`, `gmail.send` 세 개입니다. 스팸·프로모션·소셜·포럼은
+조회에서 빼기 때문에, Gmail이 이미 한 분류가 공짜 1차 필터가 됩니다.
+
 ## 하지 않는 것
 
-- **보내지 않습니다.** 기계가 하는 마지막 일은 사람이 고칠 수 있는 자리에 초안을 넣어 두는 것입니다.
+- **스스로 보내지 않습니다.** 파이프라인에서는 발송 함수에 닿을 수 없습니다. 사람이 `--send`를 붙이고,
+  받는 사람·제목·본문을 확인한 뒤 `send`라고 입력해야 나갑니다. 판단이 "사람이 직접"으로 분류한
+  메일은 `--force` 없이는 거부합니다.
 - **없는 사실을 지어내지 않습니다.** 대화에 없는 날짜·금액·정책을 쓰지 못하게 막았습니다. 확인이
   필요하면 "무엇을 언제까지 확인하겠다"고 쓰게 합니다.
 - **메일의 지시를 따르지 않습니다.** 대화 안의 명령처럼 보이는 문장은 지시가 아니라 상대가 보낸

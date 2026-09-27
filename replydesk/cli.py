@@ -4,7 +4,11 @@
     python -m replydesk reply t1               # judge one thread and write three drafts
     python -m replydesk reply t1 --json        # same, as JSON for another program
 
-Nothing is sent. The drafts are printed for a person to copy, edit and send.
+    python -m replydesk reply <id> --channel gmail --stage    # draft into the mailbox
+    python -m replydesk reply <id> --channel gmail --send     # send, after showing it and asking
+
+Sending is the only irreversible thing here, so it is the only thing that stops and asks. A model
+never reaches it: `--send` is a person typing a flag, and then typing "send" at the prompt.
 """
 from __future__ import annotations
 
@@ -18,7 +22,12 @@ from .models import Result
 from .pipeline import respond, triage
 from .questions import email as email_q
 
-CHANNELS = {"sample": SampleChannel}
+def _gmail(account: str = ""):
+    from .channels.gmail import GmailChannel   # imported lazily: the extra deps are optional
+    return GmailChannel(account=account)
+
+
+CHANNELS = {"sample": lambda account="": SampleChannel(), "gmail": _gmail}
 ROUTE = {"skip": "답장 불필요", "human": "사람이 직접", "draft": "초안 가능"}
 BAR = "─" * 72
 
@@ -61,11 +70,50 @@ def _print_result(result: Result) -> None:
     print(f"\n  {result.seconds:.1f}초 · 판단 입력 {tokens} 토큰 · 모델 {result.usage.get('model', '')}")
 
 
+def confirm_send(channel, thread, result, yes: bool = False, force: bool = False) -> int:
+    """Show exactly what would leave the mailbox, then require a typed word. Returns an exit code."""
+    draft = result.best
+    routed = email_q.route(result.answers)
+    if routed != "draft" and not force:
+        print(f"보내지 않았습니다 — 이 메일은 '{ROUTE[routed]}'로 분류됐습니다. "
+              f"그래도 보내려면 --force 를 붙이세요.", file=sys.stderr)
+        return 3
+    print(BAR)
+    print(f"받는 사람 : {thread.context.get('reply_to', '(알 수 없음)')}")
+    print(f"제목      : {'' if thread.subject.lower().startswith('re:') else 'Re: '}{thread.subject}")
+    print(f"본문      : (확신 {draft.score:.2f})")
+    for line in draft.text.splitlines():
+        print(f"    {line}")
+    print(BAR)
+    if not yes:
+        if not sys.stdin.isatty():
+            print("확인을 받을 수 없는 환경입니다. 직접 실행하거나 --yes 를 쓰세요.", file=sys.stderr)
+            return 4
+        if input("이대로 보내려면 send 를 입력하세요: ").strip().lower() != "send":
+            print("보내지 않았습니다.")
+            return 0
+    try:
+        print(f"발송 완료 → {channel.send(thread, draft.text)}")
+    except (NotImplementedError, ValueError) as e:
+        print(f"보내지 못했습니다: {e}", file=sys.stderr)
+        return 5
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="replydesk", description=__doc__)
     parser.add_argument("command", choices=["triage", "reply"])
     parser.add_argument("thread", nargs="?", help="thread id, for `reply`")
     parser.add_argument("--channel", default="sample", choices=sorted(CHANNELS))
+    parser.add_argument("--account", default="", help="mailbox to use, for channels with several")
+    parser.add_argument("--stage", action="store_true",
+                        help="put the top draft where the person sends it (Gmail: a draft)")
+    parser.add_argument("--send", action="store_true",
+                        help="send the top draft after showing it and asking for confirmation")
+    parser.add_argument("--yes", action="store_true",
+                        help="answer the send confirmation in advance (for a supervised script)")
+    parser.add_argument("--force", action="store_true",
+                        help="allow sending a thread the judge routed to a person")
     parser.add_argument("--style", default="", help="how the sender writes, one line")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     args = parser.parse_args(argv)
@@ -75,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name} 가 없습니다. 환경변수나 {name}_FILE 로 지정하세요.", file=sys.stderr)
             return 2
 
-    channel = CHANNELS[args.channel]()
+    channel = CHANNELS[args.channel](args.account)
     threads = [t for t in channel.fetch() if t.needs_reply]
 
     if args.command == "triage":
@@ -102,6 +150,15 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     result = respond(thread, email_q.QUESTIONS, email_q.guidance, email_q.RANK_INSTRUCTIONS,
                      style=args.style, route=email_q.route)
+    if args.send and result.best:
+        code = confirm_send(channel, thread, result, yes=args.yes, force=args.force)
+        if code:
+            return code
+    elif args.stage and result.best:
+        try:
+            print(f"초안을 넣었습니다 → {channel.stage(thread, result.best.text)}")
+        except NotImplementedError as e:
+            print(f"이 채널은 초안을 넣을 수 없습니다: {e}", file=sys.stderr)
     if args.json:
         print(json.dumps({"id": thread.id, "answers": result.answers,
                           "drafts": [{"text": d.text, "score": d.score} for d in result.drafts],
