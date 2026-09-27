@@ -25,18 +25,20 @@ def triage(thread: Thread, questions: dict, keep: int = 12) -> Result:
 
 
 def respond(thread: Thread, questions: dict, guidance, rank_instructions: str,
-            style: str = "", keep: int = 12, drafts: int = 3) -> Result:
+            style: str = "", keep: int = 12, drafts: int = 3, route=None) -> Result:
     """Full pass. `guidance` turns the answers into the note the writer follows.
 
-    Drafting is skipped when the judge says no reply is expected: the result still carries the
-    judgement, so the caller can show why nothing was written.
+    `route(answers) -> "skip" | "human" | "draft"` decides whether to write at all; pass the
+    channel's own (see questions/email.route). Without one, every thread gets drafts.
     """
     started = time.perf_counter()
     state = thread.as_state(keep)
     answers, usage, _ = jev.ask(state, questions)
     total: dict = {}
     _merge(total, usage)
-    if answers.get("needs_reply", {}).get("value", 1.0) < 0.5:
+    if route and route(answers) != "draft":
+        # "skip" (no reply expected) and "human" (too sensitive to hand someone a draft) both stop
+        # here: the caller still gets the judgement and can show why nothing was written.
         return Result(thread=thread, answers=answers, usage=total, seconds=time.perf_counter() - started)
 
     texts, draft_usage, _ = writer.write(state, guidance(answers), style)

@@ -99,6 +99,29 @@ INTENT_LABELS = {
     "introduction": "첫 연락·제안", "closing": "마무리", "other": "기타",
 }
 
+# Where a probability turns into a decision. Kept together and named, because these are the numbers
+# a team argues about — and because "0.59 vs 0.6" flipping a refund thread between "draft it" and
+# "a person writes this" is exactly the case that should be visible, not buried in an if.
+THRESHOLDS = {
+    "needs_reply": 0.5,      # below this the drafting model is never called
+    "needs_human": 0.5,      # at or above, route to a person instead of showing a draft
+    "answerable_here": 0.4,  # below this, drafts must promise a check rather than an answer
+    "commitment_open": 0.6,  # at or above, the draft has to say where the promise stands
+    "urgent_now": 2.5,       # on the 0..3 urgency scale: answer with a time, not "soon"
+    "urgent_today": 1.5,
+    "frustrated": 1.5,
+}
+
+
+def route(answers: dict) -> str:
+    """What should happen to this thread: "skip", "human", or "draft"."""
+    if answers.get("needs_reply", {}).get("value", 1.0) < THRESHOLDS["needs_reply"]:
+        return "skip"
+    if answers.get("needs_human", {}).get("value", 0.0) >= THRESHOLDS["needs_human"]:
+        return "human"
+    return "draft"
+
+
 RANK_INSTRUCTIONS = (
     "Which of these drafts should be sent as the reply to the latest message in `thread`? "
     "Prefer the one that answers what was actually asked, keeps any promise we already made, "
@@ -117,19 +140,19 @@ def guidance(answers: dict) -> str:
         lines.append(f"- The sender mainly wants: {intent}")
     urgency = answers.get("urgency", {}).get("value")
     if isinstance(urgency, float):
-        if urgency >= 2.5:
+        if urgency >= THRESHOLDS["urgent_now"]:
             lines.append("- This is blocking someone right now: lead with the answer or a time, no preamble.")
-        elif urgency >= 1.5:
+        elif urgency >= THRESHOLDS["urgent_today"]:
             lines.append("- They need it today: give a concrete time, not 'soon'.")
     frustration = answers.get("frustration", {}).get("value")
-    if isinstance(frustration, float) and frustration >= 1.5:
+    if isinstance(frustration, float) and frustration >= THRESHOLDS["frustrated"]:
         lines.append("- They are frustrated: acknowledge the delay in one short sentence, then the substance. "
                      "Do not over-apologise and do not explain internal reasons.")
-    if answers.get("commitment_made", {}).get("value", 0) >= 0.6:
+    if answers.get("commitment_made", {}).get("value", 0) >= THRESHOLDS["commitment_open"]:
         lines.append("- We owe them something we promised earlier: say where it stands and when it lands.")
-    if answers.get("answerable_here", {}).get("value", 1) < 0.4:
+    if answers.get("answerable_here", {}).get("value", 1) < THRESHOLDS["answerable_here"]:
         lines.append("- The thread does not contain what is needed to answer: say what we will check "
                      "and by when, instead of inventing a fact.")
-    if answers.get("needs_human", {}).get("value", 0) >= 0.6:
+    if answers.get("needs_human", {}).get("value", 0) >= THRESHOLDS["needs_human"]:
         lines.append("- Sensitive: keep it short and factual, promise no outcome, commit only to a next step.")
     return "Judgement (follow it for what to say; wording is yours):\n" + "\n".join(lines) if lines else ""

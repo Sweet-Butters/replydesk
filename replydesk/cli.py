@@ -19,6 +19,7 @@ from .pipeline import respond, triage
 from .questions import email as email_q
 
 CHANNELS = {"sample": SampleChannel}
+ROUTE = {"skip": "답장 불필요", "human": "사람이 직접", "draft": "초안 가능"}
 BAR = "─" * 72
 
 
@@ -49,7 +50,8 @@ def _print_result(result: Result) -> None:
     for qid, answer in result.answers.items():
         print(_line(qid, answer))
     if not result.drafts:
-        print("\n  답장 초안 없음 (답장이 필요 없다고 판단했거나 초안 단계를 건너뜀)")
+        why = {"skip": "답장이 필요 없다고 판단", "human": "사람이 직접 써야 하는 건으로 분류"}
+        print(f"\n  초안 없음 — {why.get(email_q.route(result.answers), '초안 단계를 건너뜀')}")
     for i, d in enumerate(result.drafts, 1):
         mark = "★" if i == 1 else " "
         print(f"\n  {mark} 후보 {i} · {d.score:.2f}")
@@ -85,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
                 intent = result.answers["intent"]
                 print(f"[{thread.id}] 긴급 {result.answers['urgency']['value']:.1f}/3 · "
                       f"{email_q.INTENT_LABELS.get(intent['value'], intent['value']):8} · "
-                      f"{'사람이 직접' if result.answers['needs_human']['value'] >= 0.6 else '초안 가능':8} · "
+                      f"{ROUTE[email_q.route(result.answers)]:8} · "
                       f"{thread.subject[:38]}")
         if args.json:
             print(json.dumps([{"id": r.thread.id, "answers": r.answers} for r in rows],
@@ -99,7 +101,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.thread} 스레드를 찾지 못했습니다", file=sys.stderr)
         return 1
     result = respond(thread, email_q.QUESTIONS, email_q.guidance, email_q.RANK_INSTRUCTIONS,
-                     style=args.style)
+                     style=args.style, route=email_q.route)
     if args.json:
         print(json.dumps({"id": thread.id, "answers": result.answers,
                           "drafts": [{"text": d.text, "score": d.score} for d in result.drafts],

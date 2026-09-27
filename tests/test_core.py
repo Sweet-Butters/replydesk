@@ -93,6 +93,20 @@ def test_guidance_is_empty_when_the_judge_said_nothing_actionable():
     assert email_q.guidance({}) == ""
 
 
+def test_route_sends_the_sensitive_and_the_pointless_somewhere_other_than_the_writer():
+    ordinary = {"needs_reply": {"value": 0.9}, "needs_human": {"value": 0.1}}
+    assert email_q.route(ordinary) == "draft"
+    assert email_q.route(dict(ordinary, needs_reply={"value": 0.2})) == "skip"
+    assert email_q.route(dict(ordinary, needs_human={"value": 0.55})) == "human"
+
+
+def test_route_is_decided_by_the_named_thresholds_not_by_scattered_numbers():
+    edge = email_q.THRESHOLDS["needs_human"]
+    base = {"needs_reply": {"value": 0.9}}
+    assert email_q.route(dict(base, needs_human={"value": edge})) == "human"
+    assert email_q.route(dict(base, needs_human={"value": edge - 0.01})) == "draft"
+
+
 def test_result_best_is_the_top_ranked_draft():
     result = Result(thread=thread("them"), answers={},
                     drafts=(Draft("낮음", 0.2), Draft("높음", 0.7)))
