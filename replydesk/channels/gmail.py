@@ -15,7 +15,9 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import os
+import random
 import re
+import time
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -36,6 +38,11 @@ SCOPES = [
 # through still meets the judge's own needs_reply question.
 SKIP_LABELS = ("SPAM", "TRASH", "CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_FORUMS")
 DEFAULT_QUERY = "in:inbox -in:chats newer_than:14d"
+
+# A full thread read costs ~10 quota units and the per-user budget is per minute, so a tight loop
+# over a busy mailbox trips "Quota exceeded ... Units per minute per user" on the tenth-odd thread.
+RETRYABLE = frozenset({403, 429, 500, 502, 503})
+MAX_TRIES = 5
 
 _QUOTE = re.compile(r"^\s*(>|On .*wrote:|\d{4}년 .*작성:|-{2,}\s*Original Message)", re.M)
 
@@ -61,6 +68,26 @@ def _service(account_hint: str = ""):
                                       prompt="consent" if not account_hint else "select_account")
         token_file.write_text(creds.to_json(), encoding="utf-8")
     return build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+
+def _call(request, tries: int = MAX_TRIES):
+    """Run a Gmail request, backing off when the mailbox says we are asking too fast.
+
+    403 is overloaded on this API: a rate limit and a permission failure share the code, so only
+    the quota wording is retried — a real permission error should surface immediately.
+    """
+    from googleapiclient.errors import HttpError
+
+    for attempt in range(tries):
+        try:
+            return request.execute()
+        except HttpError as exc:
+            status = getattr(exc.resp, "status", 0)
+            quota = status != 403 or b"uota" in (exc.content or b"")
+            if status not in RETRYABLE or not quota or attempt == tries - 1:
+                raise
+            time.sleep(min(2 ** attempt, 20) + random.random())
+    raise RuntimeError("unreachable")
 
 
 def _decode(part) -> str:
@@ -120,7 +147,7 @@ class GmailChannel:
     def service(self):
         if self._service is None:
             self._service = _service(self.account)
-            self._me = self._service.users().getProfile(userId="me").execute()["emailAddress"]
+            self._me = _call(self._service.users().getProfile(userId="me"))["emailAddress"]
         return self._service
 
     def _to_thread(self, raw: dict) -> Thread | None:
@@ -151,12 +178,18 @@ class GmailChannel:
                                "reply_to": _header(last, "Reply-To") or _header(last, "From"),
                                "message_id": _header(last, "Message-ID")})
 
-    def fetch(self, limit: int = 20) -> list[Thread]:
-        listed = self.service.users().threads().list(
-            userId="me", q=self.query, maxResults=limit * 2).execute()
+    def fetch(self, limit: int = 20, scan: int | None = None) -> list[Thread]:
+        """Newest threads that are waiting on us.
+
+        `scan` caps how many threads are opened, which is what the quota actually counts: a mailbox
+        full of newsletters would otherwise read a hundred threads to find five worth answering.
+        """
+        scan = scan or limit * 2
+        listed = _call(self.service.users().threads().list(
+            userId="me", q=self.query, maxResults=scan))
         threads = []
-        for ref in listed.get("threads", []):
-            raw = self.service.users().threads().get(userId="me", id=ref["id"], format="full").execute()
+        for ref in listed.get("threads", [])[:scan]:
+            raw = _call(self.service.users().threads().get(userId="me", id=ref["id"], format="full"))
             thread = self._to_thread(raw)
             if thread and thread.needs_reply:
                 threads.append(thread)
@@ -178,9 +211,8 @@ class GmailChannel:
 
     def stage(self, thread: Thread, text: str) -> str:
         """Create a Gmail draft in the thread. The person opens it, edits, and sends."""
-        draft = self.service.users().drafts().create(
-            userId="me", body={"message": {"raw": self._raw(thread, text), "threadId": thread.id}}
-        ).execute()
+        draft = _call(self.service.users().drafts().create(
+            userId="me", body={"message": {"raw": self._raw(thread, text), "threadId": thread.id}}))
         return f"Gmail 임시보관함 (draft {draft['id']})"
 
     def send(self, thread: Thread, text: str) -> str:
@@ -192,6 +224,6 @@ class GmailChannel:
         to = thread.context.get("reply_to")
         if not to:
             raise ValueError("받는 사람을 알 수 없어 보내지 않았습니다")
-        sent = self.service.users().messages().send(
-            userId="me", body={"raw": self._raw(thread, text), "threadId": thread.id}).execute()
+        sent = _call(self.service.users().messages().send(
+            userId="me", body={"raw": self._raw(thread, text), "threadId": thread.id}))
         return f"{to} 에게 발송됨 (message {sent['id']})"
