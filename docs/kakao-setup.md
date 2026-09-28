@@ -57,6 +57,17 @@ https://developers.kakao.com/console/app → **애플리케이션 추가하기**
 
 플랫폼 등록을 건너뛰면 나중에 `KOE004`가 납니다.
 
+> **이 칸은 나중에 메시지의 링크까지 결정합니다.**
+> 카카오는 메시지 링크의 도메인이 **여기 등록돼 있지 않으면, 등록된 첫 번째 도메인으로 조용히
+> 바꿔버립니다.** 에러도 경고도 없습니다 — 링크가 무시된 것처럼 보일 뿐입니다.
+> 받은편지함으로 보내려면 여기에 하나 더 등록하세요:
+>
+> ```
+> https://mail.google.com
+> ```
+>
+> 등록하지 않으려면 `REPLYDESK_KAKAO_LINK` 로 **이미 등록된 도메인**의 주소를 지정하면 됩니다.
+
 ---
 
 ## 3. 카카오 로그인 켜기
@@ -177,6 +188,39 @@ python -m replydesk digest --channel gmail --account work,personal --notify kaka
 
 ---
 
+## 9. 매일 아침 자동 실행 (선택)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts
+egister_daily_digest.ps1 -At 08:00
+```
+
+작업 스케줄러에 등록합니다. 관리자 권한은 필요 없습니다.
+
+```powershell
+Start-ScheduledTask   -TaskName replydesk-daily-digest      # 지금 한 번
+Get-ScheduledTaskInfo -TaskName replydesk-daily-digest      # LastTaskResult 0 이면 정상
+Unregister-ScheduledTask -TaskName replydesk-daily-digest -Confirm:$false   # 해제
+```
+
+로그는 `logs/digest-YYYY-MM.log`. 실패하면 로그에 남고, 알림 경로가 살아 있으면 **실패했다는
+사실 자체도 폰으로** 갑니다 — 조용한 실패가 제일 나쁩니다.
+
+### 여기서 걸렸던 두 가지
+
+**1. PowerShell 5.1은 BOM 없는 UTF-8을 한글로 못 읽습니다.**
+스크립트가 깨진 글자로 파싱돼 `The string is missing the terminator` 가 납니다. 실행 스크립트는
+**UTF-8 with BOM** 으로 저장해야 합니다.
+
+**2. 파이썬 경고 한 줄에 작업이 실패로 끝납니다.**
+`$ErrorActionPreference = 'Stop'` 상태에서 외부 명령을 부르면 stderr 한 줄이
+`NativeCommandError` 로 승격됩니다. 요약은 멀쩡히 발송됐는데 작업 결과만 실패로 찍힙니다.
+외부 명령을 부르는 구간에서만 `Continue` 로 풀어 두세요.
+
+`StartWhenAvailable` 을 켜 두었기 때문에, 그 시각에 PC가 꺼져 있었다면 **다음에 켤 때** 실행됩니다.
+
+---
+
 ## 막혔을 때
 
 | 증상 | 원인 | 고치는 곳 |
@@ -189,6 +233,9 @@ python -m replydesk digest --channel gmail --account work,personal --notify kaka
 | `카카오 연결이 없습니다` | 토큰 파일 없음 | 7단계를 먼저 |
 | **토큰 발급에서 401** (동의는 성공했는데) | 클라이언트 시크릿이 활성화인데 안 보냄 | 6단계 — 시크릿을 넣거나 '사용 안 함'으로 |
 | 전송 시 401 | 토큰 만료 | 자동 갱신됩니다. 그래도 나면 7단계를 다시 |
+| 작업 결과 `1`, 로그 없음 | .ps1 이 BOM 없이 저장됨 | 9단계 — UTF-8 with BOM |
+| 요약은 왔는데 작업은 실패 | 파이썬 경고가 종료 오류로 승격 | 9단계 — 외부 명령 구간만 `Continue` |
+| '자세히 보기'가 엉뚱한 사이트로 감 | 링크 도메인이 웹 플랫폼에 미등록 → 첫 등록 도메인으로 대체됨 | 2단계 — `https://mail.google.com` 을 추가 등록하거나 `REPLYDESK_KAKAO_LINK` 사용 |
 | `동의를 받지 못했습니다` | 동의 화면에서 체크박스를 안 켬 | `talk_message`는 선택 동의라 기본이 꺼져 있습니다 |
 
 ---

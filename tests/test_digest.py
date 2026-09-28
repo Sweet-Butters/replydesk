@@ -77,3 +77,20 @@ def test_kakao_truncates_before_sending(monkeypatch):
     import json
     body = json.loads(sent["template_object"])["text"]
     assert len(body) == kakao.LIMIT and body.endswith("…")
+
+
+def test_kakao_always_sets_a_link(monkeypatch):
+    """An empty link makes Kakao point its button at the app's own domain — an unrelated site."""
+    from replydesk.notify import kakao
+
+    sent = {}
+    monkeypatch.setattr(kakao, "_access_token", lambda: "test-token")
+    monkeypatch.setattr(kakao, "_post", lambda url, form, headers=None: sent.update(form) or {})
+    kakao.send("요약")
+    import json
+    link = json.loads(sent["template_object"])["link"]
+    assert link["web_url"] == kakao.DEFAULT_LINK and link["mobile_web_url"] == kakao.DEFAULT_LINK
+
+    kakao.send("요약", link="https://example.com/x")
+    link = json.loads(sent["template_object"])["link"]
+    assert link["mobile_web_url"] == "https://example.com/x"

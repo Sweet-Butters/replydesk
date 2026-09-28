@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -41,6 +42,16 @@ SCOPE = "talk_message"
 PORT = 8123
 REDIRECT = f"http://localhost:{PORT}/oauth"
 LIMIT = 200          # Kakao's text template caps the body at 200 characters, and truncates silently
+
+# The text template always renders a "자세히 보기" button, and an empty link makes Kakao fall back
+# to the app's registered domain — so the summary about your mail offers a link to an unrelated
+# website. Point it where the reader was already going.
+#
+# Kakao only honours a link whose domain is registered under 앱 설정 → 플랫폼 → Web. An
+# unregistered domain is silently swapped for the first registered one, which looks exactly like
+# the link being ignored. So this default only works once mail.google.com is registered there;
+# REPLYDESK_KAKAO_LINK overrides it with any domain the app does have.
+DEFAULT_LINK = os.environ.get("REPLYDESK_KAKAO_LINK") or "https://mail.google.com/mail/u/0/#inbox"
 
 
 def token_path() -> Path:
@@ -163,8 +174,9 @@ def send(text: str, link: str = "") -> str:
     """Put one message in the person's own note-to-self room. Never reaches anyone else."""
     if len(text) > LIMIT:
         text = text[:LIMIT - 1].rstrip() + "…"            # Kakao truncates silently; be explicit
+    target = link or DEFAULT_LINK
     template = {"object_type": "text", "text": text,
-                "link": {"web_url": link, "mobile_web_url": link} if link else {}}
+                "link": {"web_url": target, "mobile_web_url": target}}
     form = {"template_object": json.dumps(template, ensure_ascii=False)}
     try:
         _post(MEMO, form, {"Authorization": f"Bearer {_access_token()}"})
