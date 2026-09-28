@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-29 01:20",
-  "stage": "judgement accuracy measured on 55 real threads against blind draft labels; awaiting human review to finalise the gold set",
+  "updated_at": "2026-09-29 02:40",
+  "stage": "judgement accuracy measured on 55 real threads (awaiting human review); digest + KakaoTalk note-to-self notifier shipped",
   "active_tasks": [
     {
       "id": "measure-judgement",
@@ -29,7 +29,8 @@
       "id": "kakaotalk-channel",
       "what": "카카오톡 채널 — 기여한 OCR 경로를 이 구조에 이식",
       "how": "docs/kakaotalk.md 참조. jev-chat-windows PR #42 의 Windows OCR + 말풍선 색 판정",
-      "blocked_by": null
+      "blocked_by": null,
+      "note": "공식 API로는 대체 불가 확인(2026-09-29): 카카오는 개인 대화 읽기 API가 없고 PlayMCP도 '나와의 채팅 쓰기'만 가능. 화면 인식 경로 유지"
     }
   ],
   "pending_decisions": [
@@ -60,6 +61,12 @@
       "id": "cs-policy",
       "what": "기업 CS 정책 한 장 (환불 규정·SLA·에스컬레이션 기준)",
       "why": "CS 질문 세트의 기준이 됨"
+    },
+    {
+      "id": "kakao-app",
+      "what": "카카오 디벨로퍼스 앱 만들고 REST API 키 주기",
+      "why": "digest 를 카카오톡 '나와의 채팅'으로 받으려면 필요. 나에게 보내기는 심사 불필요",
+      "note": "카카오 로그인 ON · 동의항목 talk_message · Redirect URI http://localhost:8123/oauth"
     }
   ],
   "environment": {

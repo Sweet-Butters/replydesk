@@ -3,12 +3,16 @@
     python -m replydesk triage                 # judge every waiting thread, one line each
     python -m replydesk reply t1               # judge one thread and write three drafts
     python -m replydesk reply t1 --json        # same, as JSON for another program
+    python -m replydesk digest --channel gmail --account yonsei,personal --notify kakao
 
     python -m replydesk reply <id> --channel gmail --stage    # draft into the mailbox
     python -m replydesk reply <id> --channel gmail --send     # send, after showing it and asking
 
 Sending is the only irreversible thing here, so it is the only thing that stops and asks. A model
 never reaches it: `--send` is a person typing a flag, and then typing "send" at the prompt.
+
+`digest` is the opposite direction: it writes one summary to the operator's own phone and cannot
+address anyone else (see replydesk/notify).
 """
 from __future__ import annotations
 
@@ -16,7 +20,7 @@ import argparse
 import json
 import sys
 
-from . import accounts, config
+from . import accounts, config, digest, notify
 from .channels.sample import SampleChannel
 from .models import Result
 from .pipeline import respond, triage
@@ -103,13 +107,58 @@ def confirm_send(channel, thread, result, yes: bool = False, force: bool = False
     return 0
 
 
+def _open(account: str, default_channel: str):
+    """Build the channel for one account name (or a bare address). Returns (channel, email)."""
+    email, query, channel_name = account, "", default_channel
+    if account and "@" not in account:                # a name from accounts.json
+        entry = accounts.resolve(account)             # exports the credential/token paths
+        email, query = entry.get("email", ""), entry.get("query", "")
+        channel_name = entry.get("channel", default_channel)
+    return CHANNELS[channel_name](email, query), email
+
+
+def _digest(args) -> int:
+    """Count what a mailbox needs, in one phone-sized line, and optionally push it.
+
+    Accounts are walked one at a time because resolving an account exports its credential paths
+    into the environment — opening both first and fetching later would read one mailbox twice.
+    """
+    names = [n.strip() for n in args.account.split(",") if n.strip()] or [""]
+    rows, failed = [], []
+    for name in names:
+        try:
+            channel, _ = _open(name, args.channel)
+            for thread in channel.fetch():
+                if not thread.needs_reply:
+                    continue
+                answers = triage(thread, email_q.QUESTIONS).answers
+                rows.append({"account": name or args.channel, "subject": thread.subject,
+                             "route": email_q.route(answers),
+                             "urgency": answers.get("urgency", {}).get("value", 0.0)})
+        except Exception as exc:                      # one unreachable mailbox must not lose the rest
+            failed.append(f"{name or args.channel}: {type(exc).__name__} {str(exc)[:80]}")
+
+    text = digest.summarize(rows)
+    print(text)
+    for line in failed:
+        print(f"(읽지 못한 메일함 — {line})", file=sys.stderr)
+    if args.notify:
+        try:
+            print(f"\n{notify.send(args.notify, text)}")
+        except (RuntimeError, OSError, config.MissingKey) as exc:
+            print(f"알림을 보내지 못했습니다: {exc}", file=sys.stderr)
+            return 5
+    return 1 if failed and not rows else 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="replydesk", description=__doc__)
-    parser.add_argument("command", choices=["triage", "reply"])
+    parser.add_argument("command", choices=["triage", "reply", "digest"])
     parser.add_argument("thread", nargs="?", help="thread id, for `reply`")
     parser.add_argument("--channel", default="sample", choices=sorted(CHANNELS))
     parser.add_argument("--account", default="",
-                        help="a name from accounts.json, or an email address")
+                        help="a name from accounts.json, or an email address; "
+                             "digest 에서는 쉼표로 여러 개")
     parser.add_argument("--stage", action="store_true",
                         help="put the top draft where the person sends it (Gmail: a draft)")
     parser.add_argument("--send", action="store_true",
@@ -120,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="allow sending a thread the judge routed to a person")
     parser.add_argument("--style", default="", help="how the sender writes, one line")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--notify", default="", choices=sorted(notify.NOTIFIERS),
+                        help="digest 결과를 보낼 곳 (kakao: 카카오톡 '나와의 채팅')")
     args = parser.parse_args(argv)
 
     for name in ("TYPESAFE_API_KEY",) + (("GEMINI_API_KEY",) if args.command == "reply" else ()):
@@ -127,16 +178,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{name} 가 없습니다. 환경변수나 {name}_FILE 로 지정하세요.", file=sys.stderr)
             return 2
 
-    email, query, channel_name = args.account, "", args.channel
-    if args.account and "@" not in args.account:      # a name from accounts.json
-        try:
-            entry = accounts.resolve(args.account)    # exports the credential/token paths
-        except (KeyError, ValueError) as e:
-            print(e, file=sys.stderr)
-            return 2
-        email, query = entry.get("email", ""), entry.get("query", "")
-        channel_name = entry.get("channel", args.channel)
-    channel = CHANNELS[channel_name](email, query)
+    if args.command == "digest":
+        return _digest(args)          # its own path: it walks several mailboxes, not one
+
+    try:
+        channel, email = _open(args.account, args.channel)
+    except (KeyError, ValueError) as e:
+        print(e, file=sys.stderr)
+        return 2
     threads = [t for t in channel.fetch() if t.needs_reply]
 
     if args.command == "triage":

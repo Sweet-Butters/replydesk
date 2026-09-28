@@ -113,6 +113,35 @@ python -m replydesk triage --channel gmail --account work
 Scopes: `gmail.readonly`, `gmail.compose`, `gmail.send`. Spam, promotions, social and forum mail are
 excluded from the query, so Gmail's own classification does the first filtering pass for free.
 
+## A digest on your phone
+
+`digest` judges every waiting thread and prints one phone-sized summary — counts by route, then
+the threads that need the person, most urgent first:
+
+```
+[replydesk] 9/29 메일 40건
+답장 4 · 폼·링크 3
+🔴 [참석 안내] 9/30(수) 스타트업 성장 세미나
+· Re: 견적서 회신 부탁드립니다
+```
+
+It can push that to KakaoTalk's note-to-self room:
+
+```bash
+python -m replydesk.notify.kakao                 # one-time consent
+python -m replydesk digest --channel gmail --account work,personal --notify kakao
+```
+
+This uses Kakao's 메모 API, and that is the whole point of choosing it: **Kakao has no API that
+reads a personal chat, and messaging anyone else requires a reviewed business app.** The notifier
+can write exactly one message, to the account holder, in their own room. It is not a channel —
+nothing in the judge-write-rank pipeline can reach it, and it can never address another person.
+
+Setup is a Kakao Developers app with 카카오 로그인 on, the `talk_message` consent item enabled, and
+`http://localhost:8123/oauth` as a redirect URI; the REST API key goes in `KAKAO_REST_API_KEY`
+(or `KAKAO_REST_API_KEY_FILE`). The subjects in the digest leave your machine for Kakao's servers —
+if that is not acceptable, run `digest` without `--notify`.
+
 ## What it will not do
 
 - **It does not send on its own.** `send()` is unreachable from the pipeline: a person passes

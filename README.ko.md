@@ -111,6 +111,35 @@ python -m replydesk triage --channel gmail --account work
 권한은 `gmail.readonly`, `gmail.compose`, `gmail.send` 세 개입니다. 스팸·프로모션·소셜·포럼은
 조회에서 빼기 때문에, Gmail이 이미 한 분류가 공짜 1차 필터가 됩니다.
 
+## 요약을 폰으로 받기
+
+`digest` 는 대기 중인 스레드를 전부 판단해서 폰 크기의 요약 한 덩어리를 출력합니다. 분류별 건수
+다음에, 사람이 손대야 하는 건을 급한 순서로 보여줍니다.
+
+```
+[replydesk] 9/29 메일 40건
+답장 4 · 폼·링크 3
+🔴 [참석 안내] 9/30(수) 스타트업 성장 세미나
+· Re: 견적서 회신 부탁드립니다
+```
+
+이걸 카카오톡 '나와의 채팅'으로 보낼 수 있습니다.
+
+```bash
+python -m replydesk.notify.kakao                 # 최초 1회 동의
+python -m replydesk digest --channel gmail --account work,personal --notify kakao
+```
+
+카카오 메모 API를 씁니다. **이걸 고른 이유가 곧 안전장치입니다** — 카카오에는 개인 대화를 읽는
+API가 없고, 남에게 메시지를 보내려면 심사받은 비즈니스 앱이 필요합니다. 이 알림은 계정 주인의
+나와의 채팅방에 메시지 하나를 쓰는 것밖에 못 합니다. 채널이 아니라 알림이라서, 판단·작성·순위
+파이프라인에서는 닿을 수 없고 다른 사람을 수신자로 삼을 수도 없습니다.
+
+준비물은 카카오 디벨로퍼스 앱 하나입니다. 카카오 로그인 활성화, 동의항목 `talk_message` 사용,
+Redirect URI 에 `http://localhost:8123/oauth` 등록, 그리고 REST API 키를 `KAKAO_REST_API_KEY`
+(또는 `KAKAO_REST_API_KEY_FILE`) 로 지정하면 됩니다. 요약에 담긴 **제목은 카카오 서버로 나갑니다** —
+그게 곤란하면 `--notify` 없이 `digest` 만 쓰세요.
+
 ## 하지 않는 것
 
 - **스스로 보내지 않습니다.** 파이프라인에서는 발송 함수에 닿을 수 없습니다. 사람이 `--send`를 붙이고,
