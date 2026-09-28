@@ -18,6 +18,16 @@ QUESTIONS: dict = {
                      "or a closing 'thanks, nothing else needed'.",
         },
     },
+    "action_elsewhere": {
+        "type": "noul",
+        "instructions": "Does the latest message ask us to act somewhere other than in a reply — "
+                        "fill a form, click a link, register on a site, book a slot, upload a file?",
+        "criteria": {
+            "true": "The message names a form, a link, a portal or a button as the way to respond. "
+                    "Replying to the mail would not accomplish what it asks.",
+            "false": "Replying to this message is how it gets answered.",
+        },
+    },
     "intent": {
         "type": "choice",
         "instructions": "What does the sender of the latest message in `thread` mainly want?",
@@ -85,6 +95,7 @@ QUESTIONS: dict = {
 
 LABELS = {
     "needs_reply": "답장이 필요한가",
+    "action_elsewhere": "답장 말고 다른 곳에서 처리하나",
     "intent": "상대가 원하는 것",
     "urgency": "긴급도",
     "frustration": "불만도",
@@ -104,6 +115,7 @@ INTENT_LABELS = {
 # "a person writes this" is exactly the case that should be visible, not buried in an if.
 THRESHOLDS = {
     "needs_reply": 0.5,      # below this the drafting model is never called
+    "action_elsewhere": 0.6, # at or above, replying is the wrong move: point at the form instead
     "needs_human": 0.5,      # at or above, route to a person instead of showing a draft
     "answerable_here": 0.4,  # below this, drafts must promise a check rather than an answer
     "commitment_open": 0.6,  # at or above, the draft has to say where the promise stands
@@ -115,9 +127,14 @@ THRESHOLDS = {
 
 
 def route(answers: dict) -> str:
-    """What should happen to this thread: "skip", "human", or "draft"."""
+    """What should happen to this thread: "skip", "elsewhere", "human", or "draft"."""
     if answers.get("needs_reply", {}).get("value", 1.0) < THRESHOLDS["needs_reply"]:
         return "skip"
+    if answers.get("action_elsewhere", {}).get("value", 0.0) >= THRESHOLDS["action_elsewhere"]:
+        # A recruitment mail that says "apply here: forms.gle/..." is not answered by replying to it.
+        # Drafting one produces a polite message that accomplishes nothing, or worse, claims the
+        # form was filled in. Send the person to the form instead.
+        return "elsewhere"
     if answers.get("needs_human", {}).get("value", 0.0) >= THRESHOLDS["needs_human"]:
         return "human"
     return "draft"

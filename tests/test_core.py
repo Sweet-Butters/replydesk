@@ -217,3 +217,21 @@ def test_a_staged_draft_does_not_count_as_having_replied():
     thread = channel._to_thread(raw)
     assert [m.side for m in thread.messages] == ["them"]
     assert thread.needs_reply
+
+
+def test_a_form_link_survives_the_body_trim():
+    """The apply-here link sits at the bottom of a recruitment mail; trimming it away is what made
+    the judge think a reply was the way to answer."""
+    from replydesk.channels.gmail import clean
+
+    body = ("안내문 " * 900) + "\n참가신청(구글폼) https://forms.gle/ABC123\n문의: staff@x.ac.kr"
+    trimmed = clean(body, limit=500)
+    assert len(trimmed) < len(body)
+    assert "https://forms.gle/ABC123" in trimmed
+
+
+def test_route_stops_before_the_writer_when_the_action_lives_in_a_form():
+    base = {"needs_reply": {"value": 0.9}, "needs_human": {"value": 0.1}}
+    assert email_q.route(base) == "draft"
+    assert email_q.route(dict(base, action_elsewhere={"value": 0.98})) == "elsewhere"
+    assert email_q.route(dict(base, action_elsewhere={"value": 0.2})) == "draft"

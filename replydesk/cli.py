@@ -28,7 +28,8 @@ def _gmail(account: str = "", query: str = ""):
 
 
 CHANNELS = {"sample": lambda account="", query="": SampleChannel(), "gmail": _gmail}
-ROUTE = {"skip": "답장 불필요", "human": "사람이 직접", "draft": "초안 가능"}
+ROUTE = {"skip": "답장 불필요", "elsewhere": "폼·링크로 처리", "human": "사람이 직접",
+         "draft": "초안 가능"}
 BAR = "─" * 72
 
 
@@ -59,7 +60,9 @@ def _print_result(result: Result) -> None:
     for qid, answer in result.answers.items():
         print(_line(qid, answer))
     if not result.drafts:
-        why = {"skip": "답장이 필요 없다고 판단", "human": "사람이 직접 써야 하는 건으로 분류"}
+        why = {"skip": "답장이 필요 없다고 판단",
+               "elsewhere": "답장이 아니라 폼·링크에서 처리하는 건으로 분류",
+               "human": "사람이 직접 써야 하는 건으로 분류"}
         print(f"\n  초안 없음 — {why.get(email_q.route(result.answers), '초안 단계를 건너뜀')}")
     for i, d in enumerate(result.drafts, 1):
         mark = "★" if i == 1 else " "

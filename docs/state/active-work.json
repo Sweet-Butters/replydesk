@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-28 10:10",
-  "stage": "email channel proven on real mail: judged, drafted, fact-checked, staged as a Gmail draft; next is measuring judgement accuracy",
+  "updated_at": "2026-09-28 10:21",
+  "stage": "email channel proven on real mail; question set now separates 'needs a reply' from 'the action lives in a form'",
   "active_tasks": [],
   "queued_tasks": [
     {
