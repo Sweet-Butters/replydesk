@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-29 05:10",
-  "stage": "judgement accuracy measured on 55 real threads (awaiting human review); daily digest runs at 08:00 and lands on the phone",
+  "updated_at": "2026-09-29 05:45",
+  "stage": "digest goes out by KakaoTalk and mail every morning; replying to that mail commands the next run. Judgement labels still await human review",
   "active_tasks": [
     {
       "id": "measure-judgement",
@@ -81,7 +81,7 @@
     "scheduled": {
       "task": "replydesk-daily-digest",
       "when": "매일 08:00, StartWhenAvailable",
-      "script": "scripts/daily_digest.ps1 (UTF-8 with BOM 이어야 함)",
+      "script": "scripts/daily_digest.ps1 — commands 를 먼저, digest 를 나중에 (UTF-8 with BOM 이어야 함)",
       "logs": "logs/digest-YYYY-MM.log (git 제외)",
       "gotcha": "PowerShell 5.1 은 BOM 없는 UTF-8 을 못 읽고, ErrorActionPreference=Stop 이면 파이썬 경고에 작업이 실패함"
     }

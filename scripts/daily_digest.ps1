@@ -41,7 +41,14 @@ Write-Log '시작'
 # 그 경고 한 줄이 NativeCommandError 로 승격돼, 요약은 멀쩡히 나갔는데 작업은 실패로 끝난다.
 $prev = $ErrorActionPreference
 $ErrorActionPreference = 'Continue'
-$out = & $python -m replydesk digest --channel gmail --account yonsei,personal --notify kakao 2>&1
+
+# 어제 요약에 단 답장("2번 초안")을 먼저 처리한다. 순서가 중요하다 — 새 요약을 먼저 보내면
+# 번호표가 덮어써져서, 회신이 가리키던 번호가 다른 메일을 가리키게 된다.
+$replies = & $python -m replydesk commands --channel gmail 2>&1
+$replies | Where-Object { $_ -notmatch 'FutureWarning|warnings\.warn|^\s*$' } |
+    ForEach-Object { Write-Log "  [회신] $_" }
+
+$out = & $python -m replydesk digest --channel gmail --account yonsei,personal --notify kakao --mail 2>&1
 $code = $LASTEXITCODE
 $ErrorActionPreference = $prev
 $out | Where-Object { $_ -notmatch 'FutureWarning|warnings\.warn|^\s*$' } |

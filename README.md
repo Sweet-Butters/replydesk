@@ -142,6 +142,35 @@ Setup is walked through in **[docs/kakao-setup.md](docs/kakao-setup.md)**, inclu
 (or `KAKAO_REST_API_KEY_FILE`). The subjects in the digest leave your machine for Kakao's servers —
 if that is not acceptable, run `digest` without `--notify`.
 
+## Answering the digest
+
+KakaoTalk is one-way — nothing can read what you type in your own note-to-self room — so the
+instruction channel is mail. `--mail` also sends the digest to your own address with every
+actionable thread numbered, and replying to it is how you give an order:
+
+```
+2번 초안          → draft a reply to thread 2, into your drafts folder
+2, 5번 초안       → several at once
+3번 건너뛰기      → mark it handled; it leaves tomorrow's list
+전체 건너뛰기     → clear the list
+```
+
+```bash
+python -m replydesk digest --channel gmail --account work,personal --notify kakao --mail
+python -m replydesk commands --channel gmail     # reads the replies and acts on them
+```
+
+Two properties make a mailbox safe to take orders from:
+
+- **Only a reply to a digest we sent counts.** `commands` never searches the mailbox for
+  instructions; it opens the one thread this program created and reads what arrived after its own
+  message. A stranger cannot mail you a command, because their mail is not in that thread.
+- **The verbs are a closed set and none of them sends.** The strongest thing a reply can cause is
+  a draft appearing in your own drafts folder. Sending still requires `--send` and a typed
+  confirmation at a terminal.
+
+Unrecognised lines are ignored rather than guessed at, and the run reports what it understood.
+
 ## What it will not do
 
 - **It does not send on its own.** `send()` is unreachable from the pipeline: a person passes

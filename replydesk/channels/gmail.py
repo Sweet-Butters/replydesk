@@ -228,6 +228,47 @@ class GmailChannel:
         mail.set_content(text, subtype="plain", charset="utf-8")
         return base64.urlsafe_b64encode(mail.as_bytes()).decode()
 
+    def mail_self(self, subject: str, text: str) -> dict:
+        """Mail the account holder from their own address. Used for the digest, never for a reply.
+
+        Returns the ids needed to find the answer later: anything that lands in this thread after
+        this message is, by construction, something the person typed.
+        """
+        mail = EmailMessage()
+        mail["To"] = self._me or _call(self.service.users().getProfile(userId="me"))["emailAddress"]
+        mail["Subject"] = subject
+        mail.set_content(text, subtype="plain", charset="utf-8")
+        sent = _call(self.service.users().messages().send(
+            userId="me", body={"raw": base64.urlsafe_b64encode(mail.as_bytes()).decode()}))
+        return {"thread_id": sent["threadId"], "message_id": sent["id"], "to": mail["To"]}
+
+    def later_messages(self, thread_id: str, after_id: str) -> list[str]:
+        """Bodies of the messages that arrived in a thread after a given one.
+
+        This is what makes the command channel safe: it never searches the mailbox for
+        instructions. It opens one thread we created and reads what came after our own message,
+        so the only way to issue a command is to answer a mail this program sent to its owner.
+        """
+        from googleapiclient.errors import HttpError
+
+        try:
+            raw = _call(self.service.users().threads().get(
+                userId="me", id=thread_id, format="full"))
+        except HttpError:
+            return []                                  # thread deleted: nothing to obey, not an error
+        seen = False
+        out = []
+        for m in raw.get("messages", []):
+            if m["id"] == after_id:
+                seen = True
+                continue
+            if not seen or "DRAFT" in set(m.get("labelIds") or []):
+                continue
+            text = clean(_body(m["payload"]), limit=600)
+            if text:
+                out.append(text)
+        return out
+
     def stage(self, thread: Thread, text: str) -> str:
         """Create a Gmail draft in the thread. The person opens it, edits, and sends."""
         draft = _call(self.service.users().drafts().create(

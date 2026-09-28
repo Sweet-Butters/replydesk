@@ -3,7 +3,8 @@
     python -m replydesk triage                 # judge every waiting thread, one line each
     python -m replydesk reply t1               # judge one thread and write three drafts
     python -m replydesk reply t1 --json        # same, as JSON for another program
-    python -m replydesk digest --channel gmail --account yonsei,personal --notify kakao
+    python -m replydesk digest --channel gmail --account yonsei,personal --notify kakao --mail
+    python -m replydesk commands --channel gmail    # 요약 메일에 단 답장("2번 초안")을 처리
 
     python -m replydesk reply <id> --channel gmail --stage    # draft into the mailbox
     python -m replydesk reply <id> --channel gmail --send     # send, after showing it and asking
@@ -20,7 +21,7 @@ import argparse
 import json
 import sys
 
-from . import accounts, config, digest, notify
+from . import accounts, commands, config, digest, followup, notify
 from .channels.sample import SampleChannel
 from .models import Result
 from .pipeline import respond, triage
@@ -124,20 +125,23 @@ def _digest(args) -> int:
     into the environment — opening both first and fetching later would read one mailbox twice.
     """
     names = [n.strip() for n in args.account.split(",") if n.strip()] or [""]
-    rows, failed = [], []
+    rows, failed, first = [], [], None
     for name in names:
         try:
             channel, _ = _open(name, args.channel)
+            first = first or channel
             for thread in channel.fetch():
                 if not thread.needs_reply:
                     continue
                 answers = triage(thread, email_q.QUESTIONS).answers
                 rows.append({"account": name or args.channel, "subject": thread.subject,
+                             "thread_id": thread.id,
                              "route": email_q.route(answers),
                              "urgency": answers.get("urgency", {}).get("value", 0.0)})
         except Exception as exc:                      # one unreachable mailbox must not lose the rest
             failed.append(f"{name or args.channel}: {type(exc).__name__} {str(exc)[:80]}")
 
+    rows.sort(key=lambda r: (r["route"] not in digest.ACT, -float(r.get("urgency") or 0)))
     text = digest.summarize(rows)
     print(text)
     for line in failed:
@@ -148,12 +152,81 @@ def _digest(args) -> int:
         except (RuntimeError, OSError, config.MissingKey) as exc:
             print(f"알림을 보내지 못했습니다: {exc}", file=sys.stderr)
             return 5
+    if args.mail:
+        # Mailed to the account holder, numbered, and remembered — so a reply to it can say "2번".
+        try:
+            shown = digest.listed(rows)
+            subject, body = digest.as_mail(shown, total=len(rows))
+            sent = first.mail_self(subject, body)
+            followup.save(shown, sent)
+            print(f"요약 메일을 보냈습니다 → {sent['to']} (답장하면 다음 실행 때 처리합니다)")
+        except (AttributeError, NotImplementedError) as exc:
+            print(f"이 채널은 자기 메일 발송을 지원하지 않습니다: {exc}", file=sys.stderr)
+        except Exception as exc:
+            print(f"요약 메일 실패: {type(exc).__name__} {str(exc)[:120]}", file=sys.stderr)
     return 1 if failed and not rows else 0
+
+
+def _commands(args) -> int:
+    """Read replies to the last digest and do what they say. Nothing here can send mail."""
+    state = followup.load()
+    if not state.get("mail", {}).get("thread_id"):
+        print("처리할 요약 메일이 없습니다. 먼저 digest --mail 을 실행하세요")
+        return 0
+
+    channel, _ = _open(state["items"][0]["account"] if state.get("items") else args.account,
+                       args.channel)
+    replies = channel.later_messages(state["mail"]["thread_id"], state["mail"]["message_id"])
+    if not replies:
+        print("요약 메일에 아직 답장이 없습니다")
+        return 0
+
+    orders = [c for text in replies for c in commands.parse(text)]
+    if not orders:
+        print(f"답장 {len(replies)}건을 읽었지만 알아들은 지시가 없습니다")
+        return 0
+    print(f"지시: {commands.describe(orders)}")
+
+    done, skipped, missing = [], [], []
+    for order in orders:
+        missing += followup.unknown(state, order.numbers)
+        for item in followup.pick(state, order.numbers):
+            if order.verb == "skip":
+                skipped.append(item)
+                continue
+            try:
+                mailbox, _ = _open(item["account"], args.channel)
+                thread = next((t for t in mailbox.fetch() if t.id == item["thread_id"]), None)
+                if thread is None:
+                    missing.append(item["n"])
+                    continue
+                result = respond(thread, email_q.QUESTIONS, email_q.guidance,
+                                 email_q.RANK_INSTRUCTIONS, route=email_q.route,
+                                 claim_check=email_q.UNSUPPORTED_CLAIM,
+                                 claim_limit=email_q.THRESHOLDS["unsupported_claim"])
+                if not result.best:
+                    print(f"  {item['n']}번: 초안을 만들지 않았습니다 "
+                          f"({ROUTE[email_q.route(result.answers)]})")
+                    continue
+                # Staged into the drafts folder, never sent: a command can only prepare work.
+                where = mailbox.stage(thread, result.best.text)
+                done.append((item, where))
+                print(f"  {item['n']}번: 초안 → {where}")
+            except Exception as exc:
+                print(f"  {item['n']}번 실패: {type(exc).__name__} {str(exc)[:80]}", file=sys.stderr)
+
+    state["items"] = [it for it in state.get("items", [])
+                      if it not in skipped and it not in [d[0] for d in done]]
+    followup.save([{**it, "thread_id": it["thread_id"]} for it in state["items"]],
+                  state.get("mail"))
+    print(f"초안 {len(done)}건 · 건너뜀 {len(skipped)}건"
+          + (f" · 목록에 없는 번호 {sorted(set(missing))}" if missing else ""))
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="replydesk", description=__doc__)
-    parser.add_argument("command", choices=["triage", "reply", "digest"])
+    parser.add_argument("command", choices=["triage", "reply", "digest", "commands"])
     parser.add_argument("thread", nargs="?", help="thread id, for `reply`")
     parser.add_argument("--channel", default="sample", choices=sorted(CHANNELS))
     parser.add_argument("--account", default="",
@@ -171,6 +244,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="machine-readable output")
     parser.add_argument("--notify", default="", choices=sorted(notify.NOTIFIERS),
                         help="digest 결과를 보낼 곳 (kakao: 카카오톡 '나와의 채팅')")
+    parser.add_argument("--mail", action="store_true",
+                        help="digest 를 본인 메일로도 보냅니다 — 그 메일에 답장하면 지시가 됩니다")
     args = parser.parse_args(argv)
 
     for name in ("TYPESAFE_API_KEY",) + (("GEMINI_API_KEY",) if args.command == "reply" else ()):
@@ -180,6 +255,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "digest":
         return _digest(args)          # its own path: it walks several mailboxes, not one
+    if args.command == "commands":
+        return _commands(args)        # reads replies to the last digest and acts on them
 
     try:
         channel, email = _open(args.account, args.channel)

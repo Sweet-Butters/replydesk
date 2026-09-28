@@ -50,3 +50,49 @@ def summarize(rows: list[dict], today: dt.date | None = None, limit: int = 200) 
 
 def mark_for(row: dict) -> str:
     return "🔴" if float(row.get("urgency") or 0) >= 2.5 else "·"
+
+
+def listed(rows: list[dict]) -> list[dict]:
+    """The rows worth numbering: everything except the ones nothing has to happen to.
+
+    Numbering all forty would make "2번" point at a newsletter and bury the three lines that
+    matter. The skipped mail is counted in the header instead — it is still visible, just not
+    addressable.
+    """
+    return [r for r in rows if r["route"] != "skip"]
+
+
+def as_mail(rows: list[dict], today: dt.date | None = None, total: int | None = None) -> tuple[str, str]:
+    """The same digest as an email: numbered, with the grammar for answering it at the bottom.
+
+    Mail has no 200-character budget and, unlike the KakaoTalk room, it can be replied to — so
+    every thread that needs anything gets a number the reply can name. `rows` should already be
+    `listed(...)`; `total` is how many were judged in all. Returns (subject, body).
+    """
+    day = (today or dt.date.today()).strftime("%m/%d").lstrip("0")
+    counts = {k: sum(1 for r in rows if r["route"] == k) for k in ROUTE_SHORT}
+    judged = len(rows) if total is None else total
+    subject = f"[replydesk] {day} 받은편지함 {judged}건 · 답장 {counts['draft']}"
+    lines = [f"{day} 기준 {judged}건을 판단했고, 손댈 것은 {len(rows)}건입니다.", ""]
+    if not rows:
+        lines.append("답장이 필요한 메일은 없습니다.")
+    for i, row in enumerate(rows, 1):
+        urgency = float(row.get("urgency") or 0)
+        mark = "[급함] " if urgency >= 2.5 else ""
+        lines.append(f"{i:2d}. {mark}{ROUTE_SHORT[row['route']]} · {_clip(row['subject'], 60)}")
+        lines.append(f"      {row['account']} · 긴급도 {urgency:.1f}/3")
+    if total is not None and total > len(rows):
+        lines += ["", f"(나머지 {total - len(rows)}건은 답장 불필요로 판단해 목록에서 뺐습니다)"]
+    lines += [
+        "",
+        "─" * 46,
+        "이 메일에 답장해서 시킬 수 있습니다 (맨 윗줄에 쓰세요):",
+        "",
+        "  2번 초안          → 2번 메일의 답장 초안을 임시보관함에 넣습니다",
+        "  2, 5번 초안       → 여러 건을 한 번에",
+        "  3번 건너뛰기      → 처리한 것으로 표시하고 다음 요약에서 뺍니다",
+        "  전체 건너뛰기     → 목록을 비웁니다",
+        "",
+        "초안까지만 합니다. 발송은 이 경로로 되지 않습니다.",
+    ]
+    return subject, "\n".join(lines)
