@@ -7,3 +7,6 @@ keys/
 build/
 dist/
 *.egg-info/
+
+# 평가용 실제 메일 — 저장소에 올리지 않습니다
+eval/data/
