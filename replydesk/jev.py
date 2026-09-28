@@ -58,6 +58,20 @@ def ask(state: Any, questions: dict, model: str | None = None) -> tuple[dict, di
     return answers, usage, time.perf_counter() - started
 
 
+def check(state: Any, drafts: list[str], question: str, model: str | None = None) -> tuple[list[float], dict]:
+    """Ask one yes/no question about each draft, in a single call.
+
+    The draft travels inside the question rather than the state: the state is the thread, and a
+    draft is not part of it. Returns one probability per draft, in order.
+    """
+    if not drafts:
+        return [], {}
+    questions = {f"d{i}": {"type": "noul", "instructions": {"draft": text, "question": question}}
+                 for i, text in enumerate(drafts)}
+    answers, usage, _ = ask(state, questions, model=model)
+    return [answers[f"d{i}"]["value"] for i in range(len(drafts))], usage
+
+
 def rank(state: Any, drafts: list[str], instructions: str, model: str | None = None) -> tuple[list[float], dict]:
     """Score each draft as "the one to send". Returns probabilities in the drafts' order.
 

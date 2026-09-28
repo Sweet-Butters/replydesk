@@ -159,7 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{args.thread} 스레드를 찾지 못했습니다", file=sys.stderr)
         return 1
     result = respond(thread, email_q.QUESTIONS, email_q.guidance, email_q.RANK_INSTRUCTIONS,
-                     style=args.style, route=email_q.route)
+                     style=args.style, route=email_q.route,
+                     claim_check=email_q.UNSUPPORTED_CLAIM,
+                     claim_limit=email_q.THRESHOLDS["unsupported_claim"])
     if args.send and result.best:
         code = confirm_send(channel, thread, result, yes=args.yes, force=args.force)
         if code:

@@ -1,15 +1,9 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-28 07:05",
-  "stage": "email channel working end to end on two real mailboxes; next is either real drafts or measuring judgement accuracy",
+  "updated_at": "2026-09-28 10:10",
+  "stage": "email channel proven on real mail: judged, drafted, fact-checked, staged as a Gmail draft; next is measuring judgement accuracy",
   "active_tasks": [],
   "queued_tasks": [
-    {
-      "id": "real-draft",
-      "what": "실제 메일 한 건으로 초안 3개를 만들고 Gmail 임시보관함까지 넣어 확인",
-      "how": "python -m replydesk reply <thread id> --channel gmail --account yonsei --stage",
-      "blocked_by": null
-    },
     {
       "id": "measure-judgement",
       "what": "실제 메일 30~50건으로 판단 정확도 측정 (AUROC·보정·신뢰구간)",
@@ -31,11 +25,6 @@
   ],
   "pending_decisions": [
     {
-      "question": "다음 작업을 real-draft 로 갈지 measure-judgement 로 갈지",
-      "default": "real-draft",
-      "since": "2026-09-28"
-    },
-    {
       "question": "포트폴리오 증거 폴더(_trials/portfolio)를 저장소로 만들지",
       "default": "로컬 보관 — 개인 대화 화면이 포함돼 있음",
       "since": "2026-09-28"
@@ -54,14 +43,20 @@
     }
   ],
   "environment": {
-    "keys_outside_repo": ["TYPESAFE_API_KEY", "GEMINI_API_KEY"],
+    "keys_outside_repo": [
+      "TYPESAFE_API_KEY",
+      "GEMINI_API_KEY"
+    ],
     "gmail": {
       "clients": "Google Cloud 프로젝트별 OAuth 데스크톱 클라이언트 JSON",
       "tokens": "기기마다 python -m replydesk.connect 로 새로 발급. 옮기지 말 것",
       "accounts_file": "~/.replydesk/accounts.json (경로만, 비밀값 없음)",
       "gotcha": "테스트 모드 프로젝트는 사용할 계정이 테스트 사용자로 등록돼 있어야 함 (아니면 403 access_denied)"
     },
-    "connected_accounts": ["yonsei", "personal"]
+    "connected_accounts": [
+      "yonsei",
+      "personal"
+    ]
   },
   "rules": {
     "base_branch": "main",

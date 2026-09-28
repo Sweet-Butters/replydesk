@@ -110,6 +110,7 @@ THRESHOLDS = {
     "urgent_now": 2.5,       # on the 0..3 urgency scale: answer with a time, not "soon"
     "urgent_today": 1.5,
     "frustrated": 1.5,
+    "unsupported_claim": 0.5,  # at or above, the draft is dropped: it asserts something untrue
 }
 
 
@@ -121,6 +122,16 @@ def route(answers: dict) -> str:
         return "human"
     return "draft"
 
+
+# A generative model will happily write "I have already applied" into a reply to an application
+# form it has just read. The prompt forbids it and the model does it anyway, so the draft gets
+# judged too: one yes/no per candidate, and anything that claims something the thread does not
+# support is dropped before a person ever sees it.
+UNSUPPORTED_CLAIM = (
+    "Does `draft` state as already done something that `thread` and `context` do not show "
+    "happened — for example claiming we applied, paid, sent, fixed or confirmed something? "
+    "An intention ('I would like to', 'I will send it by tonight') or a question is not a claim."
+)
 
 RANK_INSTRUCTIONS = (
     "Which of these drafts should be sent as the reply to the latest message in `thread`? "

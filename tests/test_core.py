@@ -5,6 +5,7 @@ worth locking down here is the logic that would silently corrupt a judgement.
 """
 from __future__ import annotations
 
+import base64
 import datetime as dt
 import json
 import os
@@ -195,3 +196,24 @@ def test_no_account_book_is_not_an_error(tmp_path, monkeypatch):
 
     monkeypatch.setenv("REPLYDESK_ACCOUNTS", str(tmp_path / "missing.json"))
     assert accounts.load() == {} and accounts.names() == []
+
+
+def test_a_staged_draft_does_not_count_as_having_replied():
+    """A draft sits in the Gmail thread with a DRAFT label; it is not a sent reply."""
+    from replydesk.channels.gmail import GmailChannel
+
+    channel = GmailChannel()
+    channel._me = "me@x.com"
+    raw = {"id": "t", "messages": [
+        {"labelIds": ["INBOX"], "payload": {"mimeType": "text/plain",
+         "headers": [{"name": "From", "value": "Them <them@x.com>"},
+                     {"name": "Subject", "value": "질문"},
+                     {"name": "Message-ID", "value": "<1@x>"}],
+         "body": {"data": base64.urlsafe_b64encode("물어봅니다".encode()).decode()}}},
+        {"labelIds": ["DRAFT"], "payload": {"mimeType": "text/plain",
+         "headers": [{"name": "From", "value": "me@x.com"}],
+         "body": {"data": base64.urlsafe_b64encode("아직 안 보낸 초안".encode()).decode()}}},
+    ]}
+    thread = channel._to_thread(raw)
+    assert [m.side for m in thread.messages] == ["them"]
+    assert thread.needs_reply

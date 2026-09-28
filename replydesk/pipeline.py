@@ -25,7 +25,8 @@ def triage(thread: Thread, questions: dict, keep: int = 12) -> Result:
 
 
 def respond(thread: Thread, questions: dict, guidance, rank_instructions: str,
-            style: str = "", keep: int = 12, drafts: int = 3, route=None) -> Result:
+            style: str = "", keep: int = 12, drafts: int = 3, route=None,
+            claim_check: str = "", claim_limit: float = 0.5) -> Result:
     """Full pass. `guidance` turns the answers into the note the writer follows.
 
     `route(answers) -> "skip" | "human" | "draft"` decides whether to write at all; pass the
@@ -45,6 +46,13 @@ def respond(thread: Thread, questions: dict, guidance, rank_instructions: str,
     total["draft_input_tokens"] = draft_usage.get("input_tokens", 0)
     total["draft_output_tokens"] = draft_usage.get("output_tokens", 0)
     texts = texts[:drafts]
+    if claim_check and texts:
+        # The writer invents; the judge catches it. Keep the least-inventing one if all fail, so a
+        # person still has something to edit, and let the score show why it is the only option.
+        claims, claim_usage = jev.check(state, texts, claim_check)
+        _merge(total, claim_usage)
+        kept = [t for t, c in zip(texts, claims) if c < claim_limit]
+        texts = kept or [min(zip(texts, claims), key=lambda pair: pair[1])[0]]
     scores, rank_usage = jev.rank(state, texts, rank_instructions)
     _merge(total, rank_usage)
     ranked = tuple(sorted((Draft(text=t, score=s) for t, s in zip(texts, scores)),

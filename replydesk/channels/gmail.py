@@ -18,6 +18,7 @@ import os
 import random
 import re
 import time
+from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
@@ -154,8 +155,13 @@ class GmailChannel:
         messages = []
         subject = ""
         for m in raw.get("messages", []):
-            if set(m.get("labelIds") or []) & set(SKIP_LABELS):
+            labels = set(m.get("labelIds") or [])
+            if labels & set(SKIP_LABELS):
                 return None                      # Gmail already judged this thread
+            if "DRAFT" in labels:
+                # Our own unsent draft sits in the thread. It is not a reply until it is sent, and
+                # counting it as one makes a staged thread vanish from the next triage run.
+                continue
             headers = m["payload"]["headers"]
             sender = _header(headers, "From")
             subject = subject or _header(headers, "Subject")
@@ -198,16 +204,21 @@ class GmailChannel:
         return threads
 
     def _raw(self, thread: Thread, text: str) -> str:
-        """RFC 2822 message, threaded onto the mail we are answering."""
-        subject = thread.subject if thread.subject.lower().startswith("re:") else f"Re: {thread.subject}"
+        """RFC 5322 message, threaded onto the mail we are answering.
+
+        Built with EmailMessage rather than joined by hand: a Korean subject has to go out as
+        RFC 2047 encoded words, and hand-joined headers produced mojibake in the mailbox.
+        """
+        mail = EmailMessage()
+        mail["To"] = thread.context.get("reply_to", "")
+        mail["Subject"] = (thread.subject if thread.subject.lower().startswith("re:")
+                           else f"Re: {thread.subject}")
         message_id = thread.context.get("message_id", "")
-        headers = [f"To: {thread.context.get('reply_to', '')}",
-                   f"Subject: {subject}",
-                   "Content-Type: text/plain; charset=utf-8"]
         if message_id:
-            headers += [f"In-Reply-To: {message_id}", f"References: {message_id}"]
-        body = "\r\n".join(headers) + "\r\n\r\n" + text
-        return base64.urlsafe_b64encode(body.encode("utf-8")).decode()
+            mail["In-Reply-To"] = message_id
+            mail["References"] = message_id
+        mail.set_content(text, subtype="plain", charset="utf-8")
+        return base64.urlsafe_b64encode(mail.as_bytes()).decode()
 
     def stage(self, thread: Thread, text: str) -> str:
         """Create a Gmail draft in the thread. The person opens it, edits, and sends."""
