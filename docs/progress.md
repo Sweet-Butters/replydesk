@@ -1,6 +1,6 @@
 # replydesk — status board
 
-> **Last updated:** 2026-09-29 02:40
+> **Last updated:** 2026-09-29 04:30
 > Update this file in the same commit as the work. Change the summary and the time above,
 > not only the log. Entries carry a time and who did it.
 
@@ -76,6 +76,7 @@ python -m replydesk triage                # 샘플 받은편지함, 키 없이 �
 
 | Time | Kind | What happened | Result |
 |---|---|---|---|
+| 2026-09-29 04:30 | docs | 카카오 연동 재현 가이드 (docs/kakao-setup.md) | 콘솔에서 실제로 막힌 4개 지점 + 에러코드 표 |
 | 2026-09-29 02:40 | feat | `digest` + 카카오 '나와의 채팅' 알림 (`--notify kakao`) | 실제 메일함 2개 40건을 한 줄 요약; 테스트 8개 추가(32개) |
 | 2026-09-29 01:20 | eval | 판단 정확도 측정 파이프라인 (수집·블라인드 라벨·판단·지표·로컬 검수 화면) | 55건 측정: AUROC 0.99, 놓친 답장 0건, 임계값 0.5가 헛초안 8건을 만듦 |
 | 2026-09-28 10:21 | feat | "답장 말고 다른 곳에서 처리하나" 질문 추가 + 본문 트림에서 링크 보존 | 구글폼 모집 메일이 0.98로 걸려 초안을 만들지 않음 (2.6초 → 0.7초) |

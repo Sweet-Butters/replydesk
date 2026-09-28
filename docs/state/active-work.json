@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "updated_at": "2026-09-29 02:40",
+  "updated_at": "2026-09-29 04:30",
   "stage": "judgement accuracy measured on 55 real threads (awaiting human review); digest + KakaoTalk note-to-self notifier shipped",
   "active_tasks": [
     {
@@ -66,7 +66,7 @@
       "id": "kakao-app",
       "what": "카카오 디벨로퍼스 앱 만들고 REST API 키 주기",
       "why": "digest 를 카카오톡 '나와의 채팅'으로 받으려면 필요. 나에게 보내기는 심사 불필요",
-      "note": "카카오 로그인 ON · 동의항목 talk_message · Redirect URI http://localhost:8123/oauth"
+      "note": "단계별 안내: docs/kakao-setup.md. 앱 생성·플랫폼·로그인 ON·Redirect URI·동의항목까지 완료, 동의 대기"
     }
   ],
   "environment": {

@@ -137,7 +137,7 @@ reads a personal chat, and messaging anyone else requires a reviewed business ap
 can write exactly one message, to the account holder, in their own room. It is not a channel —
 nothing in the judge-write-rank pipeline can reach it, and it can never address another person.
 
-Setup is a Kakao Developers app with 카카오 로그인 on, the `talk_message` consent item enabled, and
+Setup is walked through in **[docs/kakao-setup.md](docs/kakao-setup.md)**, including the two places the console actually trips people up. In short: a Kakao Developers app with 카카오 로그인 on, the `talk_message` consent item enabled, and
 `http://localhost:8123/oauth` as a redirect URI; the REST API key goes in `KAKAO_REST_API_KEY`
 (or `KAKAO_REST_API_KEY_FILE`). The subjects in the digest leave your machine for Kakao's servers —
 if that is not acceptable, run `digest` without `--notify`.
