@@ -113,13 +113,21 @@ def _body(payload) -> str:
     return re.sub(r"\s+\n", "\n", re.sub(r"<[^>]+>", " ", text))
 
 
-def clean(text: str, limit: int = 1500) -> str:
-    """Drop the quoted history and signature noise: the thread already carries the earlier turns."""
+def clean(text: str, limit: int = 2500) -> str:
+    """Drop the quoted history and signature noise: the thread already carries the earlier turns.
+
+    Links survive the trim. A recruitment mail puts "apply here: forms.gle/..." near the bottom,
+    and cutting it off is how the judge comes to think a reply is the way to answer.
+    """
     cut = _QUOTE.search(text)
     if cut:
         text = text[:cut.start()]
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
-    return text[:limit]
+    if len(text) <= limit:
+        return text
+    dropped = [u for u in re.findall(r"https?://\S+", text[limit:])][:5]
+    kept = text[:limit].rstrip()
+    return kept + ("\n[링크] " + " ".join(dropped) if dropped else "")
 
 
 def _header(headers: list, name: str) -> str:
