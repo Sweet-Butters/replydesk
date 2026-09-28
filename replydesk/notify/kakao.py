@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 import webbrowser
@@ -52,6 +53,39 @@ def _post(url: str, form: dict, headers: dict | None = None) -> dict:
     req.add_header("Content-Type", "application/x-www-form-urlencoded;charset=utf-8")
     with urllib.request.urlopen(req, timeout=20) as res:
         return json.loads(res.read().decode("utf-8"))
+
+
+def _secret() -> str:
+    """The client secret, when the app has one turned on. Absent is normal and fine.
+
+    Kakao answers the token request with a bare 401 when a secret is required and missing, which
+    reads as "the consent failed" rather than "one more field". Hence the explicit hint below.
+    """
+    try:
+        return config.key("KAKAO_CLIENT_SECRET")
+    except (config.MissingKey, OSError):
+        return ""
+
+
+def _token_request(form: dict) -> dict:
+    """POST to Kakao's token endpoint, adding the secret if there is one, and explaining a 401."""
+    secret = _secret()
+    if secret:
+        form = dict(form, client_secret=secret)
+    try:
+        return _post(TOKEN, form)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        if exc.code == 401 and not secret:
+            raise RuntimeError("\n".join([
+                "토큰 발급이 401로 거부됐습니다. 앱에 '클라이언트 시크릿'이 켜져 있으면 "
+                "그 값이 함께 가야 합니다.",
+                "  카카오 콘솔 → 앱 설정 → 보안 → 클라이언트 시크릿",
+                "  · 켜져 있으면: 코드를 keys/kakao_client_secret.txt 에 넣고 "
+                "KAKAO_CLIENT_SECRET_FILE 로 지정하세요",
+                "  · 안 쓸 거면: 사용 상태를 '사용 안 함'으로 바꾸세요",
+                f"  카카오 응답: {detail}"])) from exc
+        raise RuntimeError(f"토큰 발급 실패 ({exc.code}): {detail}") from exc
 
 
 class _Catch(BaseHTTPRequestHandler):
@@ -95,8 +129,8 @@ def connect(open_browser: bool = True) -> Path:
     if not _Catch.code:
         raise RuntimeError(f"동의를 받지 못했습니다: {_Catch.error}")
 
-    token = _post(TOKEN, {"grant_type": "authorization_code", "client_id": client_id,
-                          "redirect_uri": REDIRECT, "code": _Catch.code})
+    token = _token_request({"grant_type": "authorization_code", "client_id": client_id,
+                            "redirect_uri": REDIRECT, "code": _Catch.code})
     path = token_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(token, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -117,9 +151,9 @@ def _refresh() -> str:
     token = json.loads(path.read_text(encoding="utf-8"))
     if not token.get("refresh_token"):
         raise RuntimeError("갱신 토큰이 없습니다. python -m replydesk.notify.kakao 로 다시 연결하세요")
-    fresh = _post(TOKEN, {"grant_type": "refresh_token",
-                          "client_id": config.key("KAKAO_REST_API_KEY"),
-                          "refresh_token": token["refresh_token"]})
+    fresh = _token_request({"grant_type": "refresh_token",
+                            "client_id": config.key("KAKAO_REST_API_KEY"),
+                            "refresh_token": token["refresh_token"]})
     token.update({k: v for k, v in fresh.items() if v})   # Kakao omits refresh_token when it is still valid
     path.write_text(json.dumps(token, ensure_ascii=False, indent=1), encoding="utf-8")
     return token["access_token"]

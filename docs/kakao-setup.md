@@ -3,8 +3,9 @@
 `digest` 결과를 카카오톡 **나와의 채팅**으로 받는 설정입니다. 약 10분.
 한 번 하면 이후로는 `--notify kakao` 한 줄이면 됩니다.
 
-이 문서는 **실제로 막혔던 지점을 그대로** 담았습니다. 카카오 콘솔은 칸마다 받는 형식이 달라서,
-순서를 모르면 같은 에러를 세 번 만납니다.
+이 문서는 **실제로 막혔던 지점을 그대로** 담았습니다. 한 번에 된 단계가 하나도 없었고, 순서대로
+`KOE004 → KOE205 → KOE006 → KOE006(다른 칸) → 401`을 만났습니다. 각 에러가 어느 칸을 가리키는지
+알면 10분, 모르면 한 시간짜리 설정입니다.
 
 ---
 
@@ -119,15 +120,26 @@ http://localhost:8123/oauth
 
 ---
 
-## 6. 키 저장
+## 6. 키 저장 — **클라이언트 시크릿도 함께 확인**
 
-앱 설정 → **앱 키** → **REST API 키**를 복사해서:
+앱 설정 → **앱 키** → **REST API 키**, 그리고 앱 설정 → **보안** → **클라이언트 시크릿**.
+
+시크릿은 기본으로 **활성화**돼 있을 수 있습니다. 그 상태면 토큰 요청에 시크릿이 함께 가야 하고,
+빠지면 동의를 정상적으로 마쳐도 **토큰 발급에서 401**이 납니다. 동의 화면까지 다 통과한 뒤라
+"설정이 다 맞는데 왜?"로 보이는 게 이 단계의 함정입니다.
 
 ```bash
 mkdir -p keys
-echo -n "여기에_REST_API_키" > keys/kakao_rest_api_key.txt
+echo -n "REST_API_키"      > keys/kakao_rest_api_key.txt
+echo -n "클라이언트_시크릿"  > keys/kakao_client_secret.txt   # 활성화돼 있을 때만
 git check-ignore -v keys/kakao_rest_api_key.txt      # .gitignore:6:keys/ 가 나와야 정상
 ```
+
+시크릿을 안 쓰려면 **보안 → 클라이언트 시크릿 → 사용 안 함**으로 바꿔도 됩니다. 개인용이면
+어느 쪽이든 동작합니다.
+
+> 보안 화면에는 코드가 **두 개**입니다. **카카오 로그인** 쪽이 토큰 발급에 쓰는 것이고,
+> **비즈니스 인증** 쪽은 우리가 쓰지 않습니다.
 
 `keys/`는 `.gitignore`에 있습니다. **커밋되는지 위 명령으로 반드시 확인하세요.**
 
@@ -137,6 +149,7 @@ git check-ignore -v keys/kakao_rest_api_key.txt      # .gitignore:6:keys/ 가 �
 
 ```bash
 export KAKAO_REST_API_KEY_FILE="$PWD/keys/kakao_rest_api_key.txt"   # Windows: set 또는 $env:
+export KAKAO_CLIENT_SECRET_FILE="$PWD/keys/kakao_client_secret.txt" # 시크릿이 활성화된 경우만
 python -m replydesk.notify.kakao
 ```
 
@@ -174,7 +187,9 @@ python -m replydesk digest --channel gmail --account work,personal --notify kaka
 | 웹 도메인 "유효하지 않은 URL" | 포트나 localhost를 넣음 | 2단계 — 진짜 도메인을 넣으세요 |
 | Redirect URI 칸이 안 보임 | 카카오 로그인 페이지에서 찾고 있음 | 4단계 — 현재 콘솔은 [플랫폼 키] > REST API 키 > 더보기 |
 | `카카오 연결이 없습니다` | 토큰 파일 없음 | 7단계를 먼저 |
+| **토큰 발급에서 401** (동의는 성공했는데) | 클라이언트 시크릿이 활성화인데 안 보냄 | 6단계 — 시크릿을 넣거나 '사용 안 함'으로 |
 | 전송 시 401 | 토큰 만료 | 자동 갱신됩니다. 그래도 나면 7단계를 다시 |
+| `동의를 받지 못했습니다` | 동의 화면에서 체크박스를 안 켬 | `talk_message`는 선택 동의라 기본이 꺼져 있습니다 |
 
 ---
 
